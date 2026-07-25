@@ -1,139 +1,445 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { BriefInput } from "@/components/BriefInput";
-import { FolderUpload } from "@/components/FolderUpload";
-import { ProgressBar } from "@/components/ProgressBar";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { useBoardStore } from "@/lib/store";
-import { scanFiles } from "@/core/scanner";
-import type { ProgressEvent, ScoringWeights } from "@/core/types";
-import { DEFAULT_SCORING_WEIGHTS } from "@/core/types";
+import type { ProgressEvent } from "@/core/types";
 
+// ─── Feature cards data ───────────────────────────────────────────────────────
+const FEATURES = [
+  {
+    icon: "⬡",
+    title: "Brief Interpretation",
+    desc: "Natural language parsed into structured creative signals — mood, style, audience, and color direction.",
+  },
+  {
+    icon: "◈",
+    title: "Explainable Ranking",
+    desc: "Every reference card shows evidence-based reasons. No black-box scores.",
+  },
+  {
+    icon: "◉",
+    title: "Style DNA",
+    desc: "Shared visual characteristics of your top references — aggregated, not generated.",
+  },
+  {
+    icon: "⊞",
+    title: "Diversity Alerts",
+    desc: "Detects repetitive boards and recommends alternatives from your own folder.",
+  },
+  {
+    icon: "◐",
+    title: "Palette Engine",
+    desc: "Three palette variants derived from your references with WCAG contrast checks.",
+  },
+  {
+    icon: "◻",
+    title: "Accessibility Checker",
+    desc: "Contrast ratios, color-blind risk, resolution and aspect-ratio compatibility.",
+  },
+];
+
+const EXAMPLES = [
+  "Warm, editorial poster about local food for young adults.",
+  "Minimal, high-contrast branding for a tech startup.",
+  "Dark, photographic campaign for a jazz music festival.",
+];
+
+// ─── Landing Page ─────────────────────────────────────────────────────────────
 export default function HomePage() {
   const router = useRouter();
   const { brief, setBrief, setResult, scoringWeights } = useBoardStore();
   const [files, setFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [progressMessage, setProgressMessage] = useState("");
+  const [progressMsg, setProgressMsg] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  function handleFiles(list: FileList | null) {
+    if (!list) return;
+    setFiles(Array.from(list));
+  }
 
   async function handleAnalyze() {
     if (!brief.trim() || files.length === 0) return;
-
     setIsLoading(true);
     setError(null);
-    setProgress(0);
-    setProgressMessage("Preparing files…");
+    setProgress(2);
+    setProgressMsg("Preparing…");
 
     try {
-      // Build form data
-      const formData = new FormData();
-      formData.append("brief", brief);
-      formData.append("weights", JSON.stringify(scoringWeights));
-      formData.append("pinnedIds", "[]");
-      formData.append("removedIds", "[]");
+      const fd = new FormData();
+      fd.append("brief", brief);
+      fd.append("weights", JSON.stringify(scoringWeights));
+      fd.append("pinnedIds", "[]");
+      fd.append("removedIds", "[]");
+      files.forEach((f) => fd.append("files", f));
 
-      for (const file of files) {
-        formData.append("files", file);
-      }
+      const res = await fetch("/api/analyze", { method: "POST", body: fd });
+      if (!res.ok || !res.body) throw new Error(`Server error ${res.status}`);
 
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok || !response.body) {
-        throw new Error(`Server returned ${response.status}`);
-      }
-
-      // Read NDJSON stream
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
 
         for (const line of lines) {
           if (!line.trim()) continue;
           try {
-            const event: ProgressEvent = JSON.parse(line);
-            setProgress(event.progress);
-            setProgressMessage(event.message);
-
-            if (event.type === "error") {
-              throw new Error(event.error ?? "Analysis failed");
-            }
-
-            if (event.type === "done" && event.result) {
-              setResult(event.result);
+            const ev: ProgressEvent = JSON.parse(line);
+            setProgress(ev.progress);
+            setProgressMsg(ev.message);
+            if (ev.type === "error") throw new Error(ev.error ?? "Failed");
+            if (ev.type === "done" && ev.result) {
+              setResult(ev.result);
               router.push("/board");
               return;
             }
-          } catch (parseErr) {
-            // Ignore malformed lines
-          }
+          } catch { /* ignore parse errors */ }
         }
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "An error occurred.");
     } finally {
       setIsLoading(false);
     }
   }
 
+  const canSubmit = brief.trim().length >= 5 && files.length > 0 && !isLoading;
+
   return (
-    <main className="min-h-screen bg-gray-50">
-      <div className="mx-auto max-w-2xl px-4 py-16">
-        {/* Header */}
-        <div className="mb-10 text-center">
-          <h1 className="text-2xl font-bold text-gray-900">
+    <main className="min-h-screen" style={{ background: "var(--surface-1)" }}>
+      {/* ── Nav ──────────────────────────────────────────────────────────────── */}
+      <nav
+        className="sticky top-0 z-50 flex items-center justify-between px-6 py-4"
+        style={{
+          borderBottom: "1px solid var(--border-1)",
+          background: "rgba(12,12,15,0.85)",
+          backdropFilter: "blur(20px)",
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <span
+            className="text-sm font-bold tracking-tight"
+            style={{ color: "var(--lime)" }}
+          >
+            CRA
+          </span>
+          <span
+            className="text-sm font-medium"
+            style={{ color: "var(--text-1)" }}
+          >
             Creative Reference Assistant
-          </h1>
-          <p className="mt-2 text-sm text-gray-500">
-            Enter a creative brief, upload your reference folder, and get a
-            ranked moodboard with explainable insights.
-          </p>
+          </span>
         </div>
+        <Badge
+          variant="outline"
+          className="text-xs"
+          style={{
+            color: "var(--text-3)",
+            borderColor: "var(--border-1)",
+            background: "transparent",
+          }}
+        >
+          v1.0 · MVP
+        </Badge>
+      </nav>
 
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-6">
-            <BriefInput
-              value={brief}
-              onChange={setBrief}
-              onSubmit={handleAnalyze}
-              isLoading={isLoading}
-            />
-            <FolderUpload
-              onFilesSelected={setFiles}
-              selectedCount={files.length}
-              isLoading={isLoading}
-            />
+      {/* ── Hero ─────────────────────────────────────────────────────────────── */}
+      <section
+        className="relative overflow-hidden px-6 py-24 text-center dot-grid"
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 50% at 50% 0%, rgba(200,245,66,0.06) 0%, transparent 70%)",
+        }}
+      >
+        {/* Glow orb */}
+        <div
+          className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2"
+          style={{
+            width: 600,
+            height: 300,
+            borderRadius: "50%",
+            background: "radial-gradient(ellipse, rgba(200,245,66,0.10) 0%, transparent 70%)",
+            filter: "blur(40px)",
+          }}
+        />
 
-            {isLoading && (
-              <ProgressBar progress={progress} message={progressMessage} />
-            )}
+        <div className="relative mx-auto max-w-3xl">
+          <div className="fade-up mb-6 flex justify-center">
+            <span
+              className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold tracking-wider uppercase"
+              style={{
+                color: "var(--lime)",
+                borderColor: "rgba(200,245,66,0.25)",
+                background: "rgba(200,245,66,0.07)",
+              }}
+            >
+              <span
+                className="inline-block h-1.5 w-1.5 rounded-full"
+                style={{ background: "var(--lime)" }}
+              />
+              July Challenge · Reimagine Creative Industries with AI
+            </span>
+          </div>
 
-            {error && (
-              <div className="rounded bg-red-50 p-3 text-sm text-red-700">
-                {error}
+          <h1 className="t-display fade-up fade-up-1 mb-5">
+            Brief to moodboard.
+            <br />
+            <span style={{ color: "var(--lime)" }} className="lime-glow-text">
+              Faster.
+            </span>
+          </h1>
+
+          <p
+            className="t-body fade-up fade-up-2 mx-auto mb-10 max-w-xl text-base"
+            style={{ color: "var(--text-2)" }}
+          >
+            Upload your reference folder, describe your brief, and get a ranked
+            moodboard with explainable insights — Style DNA, diversity alerts,
+            palette recommendations, and accessibility checks. No generated
+            images, ever.
+          </p>
+
+          {/* ── Brief + upload card ─────────────────────────────────────────── */}
+          <div
+            className="fade-up fade-up-3 mx-auto w-full max-w-2xl rounded-2xl p-px"
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(200,245,66,0.15), rgba(255,255,255,0.04), transparent)",
+            }}
+          >
+            <div
+              className="rounded-2xl p-6"
+              style={{ background: "var(--surface-2)" }}
+            >
+              {/* Brief textarea */}
+              <div className="mb-4">
+                <label
+                  htmlFor="brief"
+                  className="t-label mb-2 block"
+                >
+                  Creative Brief
+                </label>
+                <Textarea
+                  id="brief"
+                  rows={3}
+                  placeholder="e.g. Warm, editorial poster about local food for young adults…"
+                  value={brief}
+                  onChange={(e) => setBrief(e.target.value)}
+                  maxLength={1000}
+                  disabled={isLoading}
+                  className="resize-none text-sm"
+                  style={{
+                    background: "var(--surface-3)",
+                    border: "1px solid var(--border-1)",
+                    color: "var(--text-1)",
+                  }}
+                />
+                {/* Example pills */}
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {EXAMPLES.map((ex, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setBrief(ex)}
+                      disabled={isLoading}
+                      className="rounded-full border px-2.5 py-0.5 text-xs transition-all"
+                      style={{
+                        color: "var(--text-3)",
+                        borderColor: "var(--border-1)",
+                        background: "transparent",
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLButtonElement).style.color = "var(--lime)";
+                        (e.currentTarget as HTMLButtonElement).style.borderColor =
+                          "rgba(200,245,66,0.3)";
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLButtonElement).style.color = "var(--text-3)";
+                        (e.currentTarget as HTMLButtonElement).style.borderColor =
+                          "var(--border-1)";
+                      }}
+                    >
+                      {ex.split(",")[0]}…
+                    </button>
+                  ))}
+                </div>
               </div>
-            )}
+
+              {/* Folder upload */}
+              <div className="mb-5">
+                <label className="t-label mb-2 block">Reference Folder</label>
+                <div
+                  className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed py-8 transition-all"
+                  style={{
+                    borderColor: isDragging
+                      ? "var(--lime)"
+                      : "var(--border-1)",
+                    background: isDragging
+                      ? "rgba(200,245,66,0.04)"
+                      : "var(--surface-3)",
+                  }}
+                  onClick={() => inputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    handleFiles(e.dataTransfer.files);
+                  }}
+                >
+                  <svg
+                    width="28"
+                    height="28"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke={files.length > 0 ? "var(--lime)" : "var(--text-3)"}
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M3 7a2 2 0 012-2h3l2 2h7a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                  </svg>
+                  {files.length > 0 ? (
+                    <p className="t-title" style={{ color: "var(--lime)" }}>
+                      {files.length} file{files.length !== 1 ? "s" : ""} selected
+                    </p>
+                  ) : (
+                    <p className="t-body">
+                      Drop folder here or{" "}
+                      <span style={{ color: "var(--lime)" }}>browse</span>
+                    </p>
+                  )}
+                  <p className="t-caption">PNG, JPEG, SVG, PDF, text files · max 50 MB each</p>
+                </div>
+                <input
+                  ref={inputRef}
+                  type="file"
+                  className="hidden"
+                  // @ts-expect-error webkitdirectory not in standard types
+                  webkitdirectory=""
+                  multiple
+                  onChange={(e) => handleFiles(e.target.files)}
+                  disabled={isLoading}
+                />
+              </div>
+
+              {/* Progress */}
+              {isLoading && (
+                <div className="mb-5 flex flex-col gap-2">
+                  <div className="flex justify-between">
+                    <span className="t-caption">{progressMsg}</span>
+                    <span className="t-caption">{progress}%</span>
+                  </div>
+                  <Progress value={progress} className="h-1" />
+                </div>
+              )}
+
+              {/* Error */}
+              {error && (
+                <div
+                  className="mb-4 rounded-lg px-4 py-3 text-sm"
+                  style={{
+                    background: "rgba(245,66,66,0.08)",
+                    border: "1px solid rgba(245,66,66,0.2)",
+                    color: "var(--error-color)",
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+
+              <Button
+                size="lg"
+                className="w-full font-semibold"
+                style={{
+                  background: canSubmit ? "var(--lime)" : "var(--surface-4)",
+                  color: canSubmit ? "#0c0c0f" : "var(--text-3)",
+                  transition: "all 0.2s",
+                }}
+                disabled={!canSubmit}
+                onClick={handleAnalyze}
+              >
+                {isLoading ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    Analysing references…
+                  </span>
+                ) : (
+                  "Analyse References →"
+                )}
+              </Button>
+            </div>
           </div>
         </div>
+      </section>
 
-        {/* Footer */}
-        <p className="mt-8 text-center text-xs text-gray-400">
-          No images are generated. References are analyzed from your own files.
+      {/* ── Feature grid ─────────────────────────────────────────────────────── */}
+      <section
+        className="px-6 py-20"
+        style={{ borderTop: "1px solid var(--border-1)" }}
+      >
+        <div className="mx-auto max-w-5xl">
+          <p className="t-label mb-10 text-center">What it does</p>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {FEATURES.map((f, i) => (
+              <div
+                key={i}
+                className="rounded-xl p-5 transition-all"
+                style={{
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border-1)",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.borderColor =
+                    "rgba(200,245,66,0.2)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.borderColor =
+                    "var(--border-1)";
+                }}
+              >
+                <span
+                  className="mb-3 block text-2xl"
+                  style={{ color: "var(--lime)" }}
+                >
+                  {f.icon}
+                </span>
+                <p className="t-title mb-1">{f.title}</p>
+                <p className="t-body text-xs">{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Footer ───────────────────────────────────────────────────────────── */}
+      <footer
+        className="px-6 py-8 text-center"
+        style={{ borderTop: "1px solid var(--border-1)" }}
+      >
+        <p className="t-caption">
+          No images are generated. Your references stay on your machine.
+          <span className="mx-2" style={{ color: "var(--border-1)" }}>·</span>
+          Built with Next.js · shadcn/ui · Sharp · GPT-4o (optional)
         </p>
-      </div>
+      </footer>
     </main>
   );
 }

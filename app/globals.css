@@ -1,26 +1,232 @@
 @import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background:         var(--background);
+  --color-foreground:         var(--foreground);
+  --color-card:               var(--card);
+  --color-card-foreground:    var(--card-foreground);
+  --color-popover:            var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary:            var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary:          var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted:              var(--muted);
+  --color-muted-foreground:   var(--muted-foreground);
+  --color-accent:             var(--accent);
+  --color-accent-foreground:  var(--accent-foreground);
+  --color-destructive:        var(--destructive);
+  --color-border:             var(--border);
+  --color-input:              var(--input);
+  --color-ring:               var(--ring);
+  --radius-sm:                calc(var(--radius) * 0.6);
+  --radius-md:                calc(var(--radius) * 0.8);
+  --radius-lg:                var(--radius);
+  --radius-xl:                calc(var(--radius) * 1.4);
+  --font-sans:                var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono:                var(--font-geist-mono), monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@custom-variant dark (&:is(.dark *));
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Design tokens — dark editorial theme
+   ───────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* shadcn overrides — force dark regardless of system preference */
+  --background:        oklch(0.09 0.004 264);
+  --foreground:        oklch(0.95 0.005 264);
+  --card:              oklch(0.12 0.005 264);
+  --card-foreground:   oklch(0.95 0.005 264);
+  --popover:           oklch(0.13 0.005 264);
+  --popover-foreground:oklch(0.95 0.005 264);
+  --primary:           oklch(0.89 0.22 128);   /* electric lime */
+  --primary-foreground:oklch(0.09 0.004 264);
+  --secondary:         oklch(0.17 0.006 264);
+  --secondary-foreground:oklch(0.80 0.005 264);
+  --muted:             oklch(0.16 0.005 264);
+  --muted-foreground:  oklch(0.52 0.007 264);
+  --accent:            oklch(0.89 0.22 128);
+  --accent-foreground: oklch(0.09 0.004 264);
+  --destructive:       oklch(0.65 0.22 25);
+  --border:            oklch(0.22 0.006 264);
+  --input:             oklch(0.18 0.006 264);
+  --ring:              oklch(0.89 0.22 128);
+  --radius:            0.6rem;
+
+  /* App-specific tokens */
+  --lime:        #c8f542;
+  --lime-glow:   rgba(200,245,66,0.14);
+  --lime-dim:    #9ebe2a;
+  --surface-1:   #0c0c0f;
+  --surface-2:   #111115;
+  --surface-3:   #17171c;
+  --surface-4:   #1f1f26;
+  --border-1:    rgba(255,255,255,0.06);
+  --border-2:    rgba(255,255,255,0.10);
+  --text-1:      #f0f0f5;
+  --text-2:      #9595a6;
+  --text-3:      #55556a;
+  --warn-color:  #f5a623;
+  --error-color: #f54242;
+  --info-color:  #42a8f5;
+}
+
+/* ─── Base ────────────────────────────────────────────────────────────────── */
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html {
+    @apply font-sans;
+    scroll-behavior: smooth;
   }
+
+  body {
+    background: var(--surface-1);
+    color: var(--text-1);
+    font-size: 14px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  ::selection {
+    background: var(--lime-glow);
+    color: var(--lime);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--lime);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar          { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track    { background: var(--surface-1); }
+  ::-webkit-scrollbar-thumb    { background: var(--surface-4); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ─── Typography helpers ─────────────────────────────────────────────────── */
+@layer utilities {
+  .t-display {
+    font-size: clamp(2.2rem, 5.5vw, 3.75rem);
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1.0;
+    color: var(--text-1);
+  }
+
+  .t-headline {
+    font-size: 1.375rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.2;
+    color: var(--text-1);
+  }
+
+  .t-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--text-1);
+  }
+
+  .t-label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-3);
+  }
+
+  .t-body    { font-size: 0.875rem;  color: var(--text-2); }
+  .t-caption { font-size: 0.75rem;   color: var(--text-3); }
+  .t-code    { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--lime); }
+
+  /* Lime accent text */
+  .text-lime { color: var(--lime); }
+
+  /* ─── Layout ─────────────────────────────────────────────────────────────── */
+  .page-container {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ─── Cards ──────────────────────────────────────────────────────────────── */
+  .glass-card {
+    background: rgba(17, 17, 21, 0.80);
+    border: 1px solid var(--border-1);
+    border-radius: 14px;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  .surface-card {
+    background: var(--surface-3);
+    border: 1px solid var(--border-1);
+    border-radius: 12px;
+  }
+
+  /* ─── Glow effects ───────────────────────────────────────────────────────── */
+  .lime-glow-text {
+    text-shadow: 0 0 40px var(--lime-glow);
+  }
+
+  .lime-glow-box {
+    box-shadow: 0 0 0 1px rgba(200,245,66,0.25), 0 0 24px var(--lime-glow);
+  }
+
+  /* ─── Dot grid background ────────────────────────────────────────────────── */
+  .dot-grid {
+    background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  /* ─── Panel toggle ───────────────────────────────────────────────────────── */
+  .panel-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+  }
+  .panel-toggle:hover { background: var(--surface-4); }
+
+  /* ─── Animate utilities ──────────────────────────────────────────────────── */
+  .fade-up        { animation: fadeUp 0.5s cubic-bezier(.4,0,.2,1) both; }
+  .fade-up-1      { animation-delay: 0.06s; }
+  .fade-up-2      { animation-delay: 0.13s; }
+  .fade-up-3      { animation-delay: 0.20s; }
+  .fade-up-4      { animation-delay: 0.28s; }
+  .fade-up-5      { animation-delay: 0.36s; }
+}
+
+/* ─── Keyframes ──────────────────────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position:  200% 0; }
+}
+
+/* ─── Progress overrides ─────────────────────────────────────────────────── */
+[data-slot="progress-indicator"] {
+  background: var(--lime) !important;
+  box-shadow: 0 0 10px var(--lime-glow);
 }

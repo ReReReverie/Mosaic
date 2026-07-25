@@ -2,6 +2,11 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useBoardStore } from "@/lib/store";
 import { ReferenceCard } from "@/components/ReferenceCard";
 import { CreativeDirectionPanel } from "@/components/CreativeDirectionPanel";
@@ -17,160 +22,230 @@ const TOP_N = 12;
 export default function BoardPage() {
   const router = useRouter();
   const {
-    result,
-    pinnedIds,
-    removedIds,
-    brief,
-    pinReference,
-    unpinReference,
-    removeReference,
-    markTooSimilar,
-    resetReview,
-    startNewSession,
+    result, brief, pinnedIds, removedIds,
+    pinReference, unpinReference, removeReference, markTooSimilar, resetReview,
   } = useBoardStore();
 
   if (!result) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-50">
+      <main
+        className="flex min-h-screen flex-col items-center justify-center gap-6"
+        style={{ background: "var(--surface-1)" }}
+      >
         <div className="text-center">
-          <p className="mb-4 text-gray-500">No analysis result yet.</p>
-          <button
-            type="button"
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          <p className="t-headline mb-2">No analysis yet</p>
+          <p className="t-body mb-6">Start from a brief and a reference folder.</p>
+          <Button
             onClick={() => router.push("/")}
+            style={{ background: "var(--lime)", color: "#0c0c0f" }}
           >
-            Start a new analysis
-          </button>
+            ← Back to Start
+          </Button>
         </div>
       </main>
     );
   }
 
-  const { references, creativeDirection, styleDNA, diversitySuggestions, palette, accessibilityFindings, skippedFiles } = result;
+  const {
+    references, creativeDirection, styleDNA,
+    diversitySuggestions, palette, accessibilityFindings, skippedFiles,
+  } = result;
 
-  // Show top 12; pinned ones are already sorted to the top by the ranker
-  const visible = references
-    .filter((r) => !r.isRemoved)
-    .slice(0, TOP_N);
+  const visible = references.filter((r) => !r.isRemoved).slice(0, TOP_N);
+  const errorCount = accessibilityFindings.filter((f) => f.severity === "error").length;
 
   async function handleExport() {
     if (!result) return;
     const selectedIds = visible.map((r) => r.file.id);
-
     try {
-      const response = await fetch("/api/export", {
+      const res = await fetch("/api/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          result,
-          selectedIds,
-          paletteSetId: "extracted" as keyof PaletteSet,
-          files: {}, // Omit file buffers — export will skip binary references without them
-        }),
+        body: JSON.stringify({ result, selectedIds, paletteSetId: "extracted" as keyof PaletteSet, files: {} }),
       });
-
-      if (!response.ok) throw new Error("Export failed");
-      const blob = await response.blob();
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = "creative-reference-package.zip";
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
-      alert("Export failed. Please try again.");
-    }
+    } catch { alert("Export failed. Please try again."); }
   }
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      {/* Top bar */}
-      <header className="sticky top-0 z-10 border-b border-gray-200 bg-white px-4 py-3">
-        <div className="mx-auto flex max-w-screen-xl items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="text-sm text-blue-600 hover:underline"
-              onClick={() => router.push("/")}
+    <div
+      className="flex h-screen flex-col overflow-hidden"
+      style={{ background: "var(--surface-1)" }}
+    >
+      {/* ── Top bar ────────────────────────────────────────────────────────── */}
+      <header
+        className="z-20 flex shrink-0 items-center gap-4 px-5 py-3"
+        style={{
+          borderBottom: "1px solid var(--border-1)",
+          background: "rgba(12,12,15,0.90)",
+          backdropFilter: "blur(20px)",
+        }}
+      >
+        {/* Logo + brand */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => router.push("/")}
+            className="flex items-center gap-1.5 transition-opacity hover:opacity-70"
+          >
+            <span className="text-sm font-bold" style={{ color: "var(--lime)" }}>
+              CRA
+            </span>
+          </button>
+          <span style={{ color: "var(--border-1)" }}>/</span>
+          <span className="t-caption max-w-xs truncate italic" style={{ color: "var(--text-3)" }}>
+            "{brief}"
+          </span>
+        </div>
+
+        <div className="flex-1" />
+
+        {/* Stats row */}
+        <div className="flex items-center gap-3">
+          <span className="t-caption" style={{ color: "var(--text-3)" }}>
+            {visible.length}/{references.length} shown
+          </span>
+          {pinnedIds.length > 0 && (
+            <Badge
+              className="text-xs"
+              style={{
+                background: "rgba(200,245,66,0.1)",
+                color: "var(--lime)",
+                border: "1px solid rgba(200,245,66,0.2)",
+              }}
             >
-              ← New Analysis
-            </button>
-            <span className="text-sm text-gray-400">|</span>
-            <p className="max-w-lg truncate text-sm text-gray-700 italic">
-              "{brief}"
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
-              onClick={resetReview}
+              {pinnedIds.length} pinned
+            </Badge>
+          )}
+          {errorCount > 0 && (
+            <Badge
+              className="text-xs"
+              style={{
+                background: "rgba(245,66,66,0.1)",
+                color: "var(--error-color)",
+                border: "1px solid rgba(245,66,66,0.2)",
+              }}
             >
-              Reset Review
-            </button>
-            <button
-              type="button"
-              className="rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-              onClick={handleExport}
-            >
-              Export ZIP
-            </button>
-          </div>
+              {errorCount} a11y error{errorCount !== 1 ? "s" : ""}
+            </Badge>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={resetReview}
+                className="text-xs"
+                style={{
+                  background: "transparent",
+                  border: "1px solid var(--border-1)",
+                  color: "var(--text-2)",
+                }}
+              >
+                Reset
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Clear all pins and removals</TooltipContent>
+          </Tooltip>
+
+          <Button
+            size="sm"
+            onClick={handleExport}
+            className="text-xs font-semibold"
+            style={{ background: "var(--lime)", color: "#0c0c0f" }}
+          >
+            Export ZIP ↓
+          </Button>
         </div>
       </header>
 
-      <div className="mx-auto max-w-screen-xl px-4 py-6">
-        <div className="flex gap-6">
-          {/* Left sidebar — analysis panels */}
-          <aside className="flex w-72 shrink-0 flex-col gap-4">
+      {/* ── Body: sidebar + board ─────────────────────────────────────────── */}
+      <div className="flex flex-1 overflow-hidden">
+
+        {/* ── Left sidebar ───────────────────────────────────────────────── */}
+        <ScrollArea
+          className="shrink-0 overflow-y-auto"
+          style={{
+            width: 280,
+            borderRight: "1px solid var(--border-1)",
+            background: "var(--surface-2)",
+          }}
+        >
+          <div className="flex flex-col gap-1 p-3">
             <CreativeDirectionPanel direction={creativeDirection} />
             <StyleDNAPanel dna={styleDNA} />
             <DiversityPanel
               suggestions={diversitySuggestions}
-              onAddToBoard={(ids) => {
-                // Unremove suggested references so they appear on the board
-                ids.forEach((id) => {
-                  const ref = references.find((r) => r.file.id === id);
-                  if (ref?.isRemoved) {
-                    // Would call unremoveReference here if we needed it
-                  }
-                });
-              }}
+              onAddToBoard={() => {}}
             />
             <PalettePanel palette={palette} />
             <AccessibilityPanel findings={accessibilityFindings} />
             <SkippedFilesPanel skipped={skippedFiles} />
-          </aside>
+          </div>
+        </ScrollArea>
 
-          {/* Main board — reference cards */}
-          <section className="flex-1">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-800">
-                Top {TOP_N} References{" "}
-                <span className="font-normal text-gray-400">
-                  ({references.filter((r) => !r.isRemoved).length} total)
-                </span>
-              </h2>
-              {removedIds.length > 0 && (
-                <p className="text-xs text-gray-400">
-                  {removedIds.length} removed
+        {/* ── Main board ─────────────────────────────────────────────────── */}
+        <ScrollArea className="flex-1 overflow-y-auto">
+          <div className="p-6">
+            {/* Board header row */}
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <h1 className="t-headline">Reference Board</h1>
+                <p className="t-caption mt-0.5">
+                  Top {TOP_N} results · {removedIds.length > 0 && `${removedIds.length} removed · `}
+                  sorted by relevance
                 </p>
-              )}
+              </div>
+              <button
+                type="button"
+                onClick={() => router.push("/")}
+                className="t-caption transition-all"
+                style={{ color: "var(--text-3)" }}
+                onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "var(--lime)")}
+                onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "var(--text-3)")}
+              >
+                ← New analysis
+              </button>
             </div>
 
+            <Separator style={{ background: "var(--border-1)", marginBottom: 20 }} />
+
             {visible.length === 0 ? (
-              <div className="flex h-64 flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300">
-                <p className="text-sm text-gray-500">All references removed.</p>
-                <button
-                  type="button"
-                  className="text-xs text-blue-500 hover:underline"
+              /* Empty state */
+              <div
+                className="flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed py-24"
+                style={{ borderColor: "var(--border-1)" }}
+              >
+                <span className="text-3xl" style={{ color: "var(--text-3)" }}>◻</span>
+                <p className="t-body">All references removed.</p>
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={resetReview}
+                  style={{
+                    border: "1px solid var(--border-1)",
+                    color: "var(--text-2)",
+                    background: "transparent",
+                  }}
                 >
                   Reset review
-                </button>
+                </Button>
               </div>
             ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
+              <div className="grid gap-4" style={{
+                gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))",
+              }}>
                 {visible.map((ref) => (
                   <ReferenceCard
                     key={ref.file.id}
@@ -183,9 +258,9 @@ export default function BoardPage() {
                 ))}
               </div>
             )}
-          </section>
-        </div>
+          </div>
+        </ScrollArea>
       </div>
-    </main>
+    </div>
   );
 }
