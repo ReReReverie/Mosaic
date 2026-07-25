@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Creative Reference Assistant
 
-## Getting Started
+An analytical AI partner for graphic and visual designers. Enter a creative brief, select a reference folder, and get a ranked moodboard with explainable reasons, Style DNA, diversity suggestions, palette recommendations, and accessibility warnings.
 
-First, run the development server:
+## Local Setup
+
+### Prerequisites
+
+- Node.js 18+
+- npm 9+
+- (Optional) GraphicsMagick or ImageMagick for PDF thumbnail generation
+
+```bash
+# Clone and install
+cd creative-reference-assistant
+npm install
+
+# Copy env template
+cp .env.example .env.local
+# Add your OpenAI API key if you want AI-enhanced prompt parsing (optional)
+# OPENAI_API_KEY=sk-...
+```
+
+### Development
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Tests
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm test
+```
 
-## Learn More
+### Build
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run build
+npm start
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Usage
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Enter a creative brief (e.g. *"Find references for a warm, editorial poster about local food for young adults."*)
+2. Upload a folder of reference images, PDFs, and documents
+3. Adjust creative constraints (format, output type, scoring weights) as needed
+4. Review the ranked posterboard
+5. Pin, remove, or mark references as too similar
+6. Export the package as a ZIP
 
-## Deploy on Vercel
+## Features
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- **Creative Direction Breakdown** — structured intent extracted from your brief
+- **Explainable Ranking** — every reference card shows evidence-based reasons
+- **Style DNA** — shared visual characteristics of your selected references
+- **Diversity Suggestions** — detects repetitive boards and recommends alternatives
+- **Palette Recommendations** — three palette options derived from your references
+- **Accessibility Checker** — WCAG 2.1 AA contrast and color-blind risk warnings
+- **ZIP Export** — portable package with references, palettes, and a standalone posterboard.html
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## AI Enhancement
+
+When `OPENAI_API_KEY` is set, GPT-4o improves prompt parsing and explanation quality. The app is fully functional without an API key using deterministic fallbacks.
+
+## Notes on PDF Thumbnails
+
+PDF thumbnail generation requires either GraphicsMagick or ImageMagick to be installed on the system. If neither is available, PDFs are still analyzed for text content but no thumbnail is generated.
+
+## Architecture
+
+```
+core/           — Platform-neutral analysis engine (no Next.js imports)
+  analyzers/    — Per-format feature extractors
+app/api/        — Next.js API routes (thin adapters over core)
+components/     — React UI components
+lib/            — Client-side utilities and Zustand store
+demo-assets/    — Sample reference files for testing
+```
