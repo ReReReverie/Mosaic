@@ -43,7 +43,7 @@ export function StyleDNAPanel({ dna }: Props) {
         >
           {/* Summary */}
           <p className="text-xs italic leading-relaxed" style={{ color: "var(--text-2)" }}>
-            "{dna.summary}"
+            &quot;{dna.summary}&quot;
           </p>
 
           {/* Colors */}

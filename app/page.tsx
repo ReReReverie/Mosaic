@@ -52,7 +52,17 @@ const EXAMPLES = [
 // ─── Landing Page ─────────────────────────────────────────────────────────────
 export default function HomePage() {
   const router = useRouter();
-  const { brief, setBrief, setResult, scoringWeights } = useBoardStore();
+  const {
+    brief,
+    setBrief,
+    setResult,
+    setUploadedFiles,
+    scoringWeights,
+    constraints,
+    setConstraints,
+    pinnedIds,
+    removedIds,
+  } = useBoardStore();
   const [files, setFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -63,7 +73,26 @@ export default function HomePage() {
 
   function handleFiles(list: FileList | null) {
     if (!list) return;
-    setFiles(Array.from(list));
+    const unique = new Map<string, File>();
+    for (const file of Array.from(list)) {
+      const relativePath =
+        (file as File & { webkitRelativePath?: string }).webkitRelativePath ||
+        file.name;
+      unique.set(`${relativePath}:${file.size}:${file.lastModified}`, file);
+    }
+    setFiles([...unique.values()]);
+  }
+
+  function updateConstraint(type: "format" | "output", value: string) {
+    const next = constraints.filter((constraint) => constraint.type !== type);
+    if (value !== "any" && value !== "both") {
+      next.push({
+        type,
+        value,
+        description: `${type === "format" ? "Format" : "Output"}: ${value}`,
+      });
+    }
+    setConstraints(next);
   }
 
   async function handleAnalyze() {
@@ -75,19 +104,25 @@ export default function HomePage() {
 
     try {
       const fd = new FormData();
-      fd.append("brief", brief);
+      fd.append("brief", brief.trim());
       fd.append("weights", JSON.stringify(scoringWeights));
-      fd.append("pinnedIds", "[]");
-      fd.append("removedIds", "[]");
+      fd.append("constraints", JSON.stringify(constraints));
+      fd.append("pinnedIds", JSON.stringify(pinnedIds));
+      fd.append("removedIds", JSON.stringify(removedIds));
       files.forEach((f) => fd.append("files", f));
 
       const res = await fetch("/api/analyze", { method: "POST", body: fd });
-      if (!res.ok || !res.body) throw new Error(`Server error ${res.status}`);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error ?? `Server error ${res.status}`);
+      }
+      if (!res.body) throw new Error("The analysis stream was unavailable.");
 
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = "";
 
+      let completed = false;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -97,19 +132,34 @@ export default function HomePage() {
 
         for (const line of lines) {
           if (!line.trim()) continue;
+          let ev: ProgressEvent;
           try {
-            const ev: ProgressEvent = JSON.parse(line);
-            setProgress(ev.progress);
-            setProgressMsg(ev.message);
-            if (ev.type === "error") throw new Error(ev.error ?? "Failed");
-            if (ev.type === "done" && ev.result) {
-              setResult(ev.result);
-              router.push("/board");
-              return;
-            }
-          } catch { /* ignore parse errors */ }
+            ev = JSON.parse(line) as ProgressEvent;
+          } catch {
+            continue;
+          }
+          setProgress(ev.progress);
+          setProgressMsg(ev.message);
+          if (ev.type === "error") throw new Error(ev.error ?? "Analysis failed.");
+          if (ev.type === "done" && ev.result) {
+            const uploaded = files.flatMap((file) => {
+              const match = ev.result?.references.find(
+                (reference) =>
+                  reference.file.filename === file.name &&
+                  reference.file.sizeBytes === file.size &&
+                  reference.file.lastModified === file.lastModified
+              );
+              return match ? [{ id: match.file.id, file }] : [];
+            });
+            setUploadedFiles(uploaded);
+            setResult(ev.result);
+            completed = true;
+            router.push("/board");
+            return;
+          }
         }
       }
+      if (!completed) throw new Error("Analysis ended before completion.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "An error occurred.");
     } finally {
@@ -118,6 +168,12 @@ export default function HomePage() {
   }
 
   const canSubmit = brief.trim().length >= 5 && files.length > 0 && !isLoading;
+  const selectedFormat = String(
+    constraints.find((constraint) => constraint.type === "format")?.value ?? "any"
+  );
+  const selectedOutput = String(
+    constraints.find((constraint) => constraint.type === "output")?.value ?? "both"
+  );
 
   return (
     <main className="min-h-screen" style={{ background: "var(--surface-1)" }}>
@@ -279,11 +335,60 @@ export default function HomePage() {
                 </div>
               </div>
 
+              {/* Output constraints */}
+              <div className="mb-5 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="format" className="t-label mb-2 block">Target format</label>
+                  <select
+                    id="format"
+                    value={selectedFormat}
+                    onChange={(e) => updateConstraint("format", e.target.value)}
+                    disabled={isLoading}
+                    className="h-10 w-full rounded-lg px-3 text-sm"
+                    style={{
+                      background: "var(--surface-3)",
+                      border: "1px solid var(--border-1)",
+                      color: "var(--text-1)",
+                    }}
+                  >
+                    <option value="any">Any format</option>
+                    <option value="poster">Poster</option>
+                    <option value="social">Social</option>
+                    <option value="website">Website</option>
+                    <option value="logo">Logo</option>
+                    <option value="editorial">Editorial</option>
+                    <option value="branding">Branding</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="output" className="t-label mb-2 block">Output</label>
+                  <select
+                    id="output"
+                    value={selectedOutput}
+                    onChange={(e) => updateConstraint("output", e.target.value)}
+                    disabled={isLoading}
+                    className="h-10 w-full rounded-lg px-3 text-sm"
+                    style={{
+                      background: "var(--surface-3)",
+                      border: "1px solid var(--border-1)",
+                      color: "var(--text-1)",
+                    }}
+                  >
+                    <option value="both">Print + screen</option>
+                    <option value="print">Print</option>
+                    <option value="screen">Screen</option>
+                  </select>
+                </div>
+              </div>
+
               {/* Folder upload */}
               <div className="mb-5">
-                <label className="t-label mb-2 block">Reference Folder</label>
+                <label htmlFor="reference-files" className="t-label mb-2 block">Reference Folder</label>
                 <div
                   className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed py-8 transition-all"
+                  role="button"
+                  tabIndex={isLoading ? -1 : 0}
+                  aria-label="Choose a reference folder"
                   style={{
                     borderColor: isDragging
                       ? "var(--lime)"
@@ -293,6 +398,12 @@ export default function HomePage() {
                       : "var(--surface-3)",
                   }}
                   onClick={() => inputRef.current?.click()}
+                  onKeyDown={(e) => {
+                    if ((e.key === "Enter" || e.key === " ") && !isLoading) {
+                      e.preventDefault();
+                      inputRef.current?.click();
+                    }
+                  }}
                   onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                   onDragLeave={() => setIsDragging(false)}
                   onDrop={(e) => {
@@ -327,11 +438,13 @@ export default function HomePage() {
                 </div>
                 <input
                   ref={inputRef}
+                  id="reference-files"
                   type="file"
                   className="hidden"
                   // @ts-expect-error webkitdirectory not in standard types
                   webkitdirectory=""
                   multiple
+                  accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff,image/svg+xml,application/pdf,text/plain,text/markdown,text/html,text/csv,application/json"
                   onChange={(e) => handleFiles(e.target.files)}
                   disabled={isLoading}
                 />

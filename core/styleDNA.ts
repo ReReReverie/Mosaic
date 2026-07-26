@@ -1,5 +1,5 @@
 import type { RankedReference, StyleDNA, ColorSample } from "./types";
-import { rgbToHsl, buildColorSamples } from "./analyzers/utils";
+import { rgbToHsl } from "./analyzers/utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Style DNA Analyzer

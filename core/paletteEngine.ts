@@ -180,8 +180,8 @@ function adjustForContrast(
   bgRgb: [number, number, number],
   targetRatio = 4.5
 ): [number, number, number] {
-  let [h, s, l] = rgbToHsl(textRgb[0], textRgb[1], textRgb[2]);
-  const bgLum = relativeLuminance(bgRgb[0], bgRgb[1], bgRgb[2]);
+  const [h, s, initialLightness] = rgbToHsl(textRgb[0], textRgb[1], textRgb[2]);
+  let l = initialLightness;
 
   // Try darkening first
   for (let i = 0; i < 20; i++) {

@@ -9,7 +9,6 @@ import type {
   ScoringWeights,
 } from "@/core/types";
 import { DEFAULT_SCORING_WEIGHTS } from "@/core/types";
-import crypto from "crypto";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Board Store
@@ -17,11 +16,17 @@ import crypto from "crypto";
 // Persisted to localStorage keyed by sessionId.
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface UploadedFile {
+  id: string;
+  file: File;
+}
+
 interface BoardActions {
   setBrief: (brief: string) => void;
   setConstraints: (constraints: CreativeConstraint[]) => void;
   setScoringWeights: (weights: ScoringWeights) => void;
   setResult: (result: AnalysisResult) => void;
+  setUploadedFiles: (files: UploadedFile[]) => void;
   pinReference: (id: string) => void;
   unpinReference: (id: string) => void;
   removeReference: (id: string) => void;
@@ -32,7 +37,7 @@ interface BoardActions {
   startNewSession: () => void;
 }
 
-type Store = BoardState & BoardActions;
+type Store = BoardState & { uploadedFiles: UploadedFile[] } & BoardActions;
 
 function generateSessionId(): string {
   if (typeof window !== "undefined" && window.crypto) {
@@ -53,6 +58,7 @@ export const useBoardStore = create<Store>()(
       pinnedIds: [],
       removedIds: [],
       tooSimilarIds: [],
+      uploadedFiles: [],
 
       // ── Actions ────────────────────────────────────────────────────────────
 
@@ -78,8 +84,13 @@ export const useBoardStore = create<Store>()(
           isTooSimilar: tooSimilarIds.includes(ref.file.id),
         }));
 
-        set({ result: { ...result, references: mergedReferences } });
+        set({
+          sessionId: result.sessionId,
+          result: { ...result, references: mergedReferences },
+        });
       },
+
+      setUploadedFiles: (uploadedFiles) => set({ uploadedFiles }),
 
       pinReference: (id) => {
         const { pinnedIds, result } = get();
@@ -208,6 +219,7 @@ export const useBoardStore = create<Store>()(
           pinnedIds: [],
           removedIds: [],
           tooSimilarIds: [],
+          uploadedFiles: [],
         });
       },
     }),

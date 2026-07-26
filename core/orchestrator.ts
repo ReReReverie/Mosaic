@@ -3,8 +3,9 @@ import type {
   ReferenceFile,
   ScoringWeights,
   AnalysisResult,
-  RankedReference,
   ProgressEvent,
+  CreativeConstraint,
+  SkippedFile,
 } from "./types";
 import { DEFAULT_SCORING_WEIGHTS } from "./types";
 import { analyzeFile } from "./analyzers/index";
@@ -27,6 +28,8 @@ export interface OrchestratorInput {
   apiKey?: string;
   pinnedIds?: string[];
   removedIds?: string[];
+  constraints?: CreativeConstraint[];
+  preSkippedFiles?: SkippedFile[];
   /**
    * Function that reads a file's contents by id and path.
    * Injected so the orchestrator stays platform-neutral.
@@ -47,6 +50,8 @@ export async function* runAnalysis(
     apiKey,
     pinnedIds = [],
     removedIds = [],
+    constraints = [],
+    preSkippedFiles = [],
     readFile,
   } = input;
 
@@ -58,7 +63,10 @@ export async function* runAnalysis(
     progress: 2,
     message: "Interpreting brief…",
   };
-  const creativeDirection = await interpretPrompt(brief, apiKey);
+  const creativeDirection = {
+    ...(await interpretPrompt(brief, apiKey)),
+    constraints,
+  };
 
   // ── 2. Analyse files in batches ──────────────────────────────────────────
   yield {
@@ -68,7 +76,7 @@ export async function* runAnalysis(
   };
 
   const featuresMap = new Map<string, import("./types").ReferenceFeatures>();
-  const skippedFiles: AnalysisResult["skippedFiles"] = [];
+  const skippedFiles: AnalysisResult["skippedFiles"] = [...preSkippedFiles];
 
   const totalFiles = files.length;
   let processed = 0;
@@ -96,7 +104,8 @@ export async function* runAnalysis(
       })
     );
 
-    const progress = 5 + Math.round((processed / totalFiles) * 60);
+    const progress =
+      totalFiles === 0 ? 65 : 5 + Math.round((processed / totalFiles) * 60);
     yield {
       type: "file-analysis-progress",
       progress,
@@ -155,7 +164,11 @@ export async function* runAnalysis(
   };
 
   // ── 7. Accessibility ──────────────────────────────────────────────────────
-  const accessibilityFindings = checkAccessibility(top, palette, []);
+  const accessibilityFindings = checkAccessibility(
+    top,
+    palette,
+    creativeDirection.constraints
+  );
 
   yield {
     type: "accessibility-complete",

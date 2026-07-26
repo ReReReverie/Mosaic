@@ -76,18 +76,6 @@ function buildVector(ref: RankedReference): DiversityVector {
   };
 }
 
-function vectorValues(v: DiversityVector): number[] {
-  return [
-    v.lightDark,
-    v.warmCool,
-    v.densityScore,
-    v.asymmetry,
-    v.orientationScore,
-    v.illustrativeScore,
-    v.abstractScore,
-  ];
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Simple 1D dimension analysis (no full k-means needed for 7 dimensions)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,8 +116,6 @@ export function analyzeDiversity(
 
   for (const dim of DIMENSIONS) {
     const values = selectedVectors.map((v) => v[dim.field] as number);
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
-
     // Check for strong bias in either direction
     const highCount = values.filter((v) => v > 0.6).length;
     const lowCount = values.filter((v) => v < 0.4).length;

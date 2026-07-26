@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   rgbToHsl,
-  rgbToLab,
   colorDistance,
   rgbToHex,
   kMeansColors,
@@ -19,7 +18,7 @@ describe("rgbToHsl", () => {
   });
 
   it("converts grey (achromatic)", () => {
-    const [h, s, l] = rgbToHsl(128, 128, 128);
+    const [, s, l] = rgbToHsl(128, 128, 128);
     expect(s).toBeCloseTo(0, 2);
     expect(l).toBeCloseTo(128 / 255 / 2 + 128 / 255 / 2, 1);
   });

@@ -15,7 +15,6 @@ import { DiversityPanel } from "@/components/DiversityPanel";
 import { PalettePanel } from "@/components/PalettePanel";
 import { AccessibilityPanel } from "@/components/AccessibilityPanel";
 import { SkippedFilesPanel } from "@/components/SkippedFilesPanel";
-import type { PaletteSet } from "@/core/types";
 
 const TOP_N = 12;
 
@@ -23,8 +22,10 @@ export default function BoardPage() {
   const router = useRouter();
   const {
     result, brief, pinnedIds, removedIds,
+    uploadedFiles,
     pinReference, unpinReference, removeReference, markTooSimilar, resetReview,
   } = useBoardStore();
+  const [isExporting, setIsExporting] = React.useState(false);
 
   if (!result) {
     return (
@@ -57,13 +58,31 @@ export default function BoardPage() {
   async function handleExport() {
     if (!result) return;
     const selectedIds = visible.map((r) => r.file.id);
+    const sourceFiles = uploadedFiles.filter((uploaded) =>
+      selectedIds.includes(uploaded.id)
+    );
+    setIsExporting(true);
     try {
+      const formData = new FormData();
+      formData.append("result", JSON.stringify(result));
+      formData.append("selectedIds", JSON.stringify(selectedIds));
+      formData.append("paletteSetId", "extracted");
+      formData.append(
+        "fileIds",
+        JSON.stringify(sourceFiles.map((uploaded) => uploaded.id))
+      );
+      for (const uploaded of sourceFiles) {
+        formData.append("files", uploaded.file, uploaded.file.name);
+      }
+
       const res = await fetch("/api/export", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ result, selectedIds, paletteSetId: "extracted" as keyof PaletteSet, files: {} }),
+        body: formData,
       });
-      if (!res.ok) throw new Error("Export failed");
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error ?? "Export failed.");
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -71,7 +90,11 @@ export default function BoardPage() {
       a.download = "creative-reference-package.zip";
       a.click();
       URL.revokeObjectURL(url);
-    } catch { alert("Export failed. Please try again."); }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Export failed. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   return (
@@ -101,7 +124,7 @@ export default function BoardPage() {
           </button>
           <span style={{ color: "var(--border-1)" }}>/</span>
           <span className="t-caption max-w-xs truncate italic" style={{ color: "var(--text-3)" }}>
-            "{brief}"
+            &quot;{brief}&quot;
           </span>
         </div>
 
@@ -162,6 +185,7 @@ export default function BoardPage() {
           <Button
             size="sm"
             onClick={handleExport}
+            disabled={isExporting}
             className="text-xs font-semibold"
             style={{ background: "var(--lime)", color: "#0c0c0f" }}
           >

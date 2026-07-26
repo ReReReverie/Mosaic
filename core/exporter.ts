@@ -37,10 +37,16 @@ function buildPosterboardHtml(
 
   const cards = selected
     .map(
-      (ref) => `
+      (ref) => {
+        const safeColors = ref.features.colors
+          .slice(0, 5)
+          .map((color) =>
+            /^#[0-9a-f]{3,8}$/i.test(color.hex) ? color.hex : "#000000"
+          );
+        return `
     <div class="card">
       <div class="card-thumb" style="background:#f7f8fa;display:flex;align-items:center;justify-content:center;min-height:160px;font-size:12px;color:#57606a;">
-        [${ref.file.mimeType}]
+        [${escapeHtml(ref.file.mimeType)}]
       </div>
       <div class="card-body">
         <div class="card-filename">${escapeHtml(ref.file.filename)}</div>
@@ -49,13 +55,13 @@ function buildPosterboardHtml(
           ${ref.reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}
         </ul>
         <div class="card-colors">
-          ${ref.features.colors
-            .slice(0, 5)
-            .map((c) => `<span class="swatch" title="${c.hex}" style="background:${c.hex}"></span>`)
+          ${safeColors
+            .map((color) => `<span class="swatch" title="${escapeHtml(color)}" style="background:${color}"></span>`)
             .join("")}
         </div>
       </div>
     </div>`
+      }
     )
     .join("\n");
 

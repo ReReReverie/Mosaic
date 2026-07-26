@@ -19,6 +19,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  if (!/^[a-f0-9]{32}$/i.test(id)) {
+    return new Response(PLACEHOLDER_PNG, {
+      status: 400,
+      headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },
+    });
+  }
   const entry = getThumbnail(id);
 
   if (!entry) {
@@ -26,7 +32,7 @@ export async function GET(
       status: 200,
       headers: {
         "Content-Type": "image/png",
-        "Cache-Control": "public, max-age=3600",
+        "Cache-Control": "no-store",
       },
     });
   }
@@ -35,7 +41,7 @@ export async function GET(
     status: 200,
     headers: {
       "Content-Type": entry.mimeType,
-      "Cache-Control": "public, max-age=3600",
+      "Cache-Control": "private, max-age=300",
     },
   });
 }

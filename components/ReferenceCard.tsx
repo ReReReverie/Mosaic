@@ -2,9 +2,7 @@
 
 import React from "react";
 import Image from "next/image";
-import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Button } from "@/components/ui/button";
 import type { RankedReference } from "@/core/types";
 
 interface Props {

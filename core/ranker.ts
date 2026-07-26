@@ -6,7 +6,7 @@ import type {
   ScoringWeights,
   ScoreBreakdown,
 } from "./types";
-import { colorDistance, rgbToHsl } from "./analyzers/utils";
+import { rgbToHsl } from "./analyzers/utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Ranking Engine
@@ -265,6 +265,14 @@ function buildReasons(
  * Validate that scoring weights sum to 1.0 (±0.01 tolerance).
  */
 export function validateWeights(weights: ScoringWeights): void {
+  const values = Object.values(weights);
+  if (
+    values.length !== 5 ||
+    values.some((value) => !Number.isFinite(value) || value < 0 || value > 1)
+  ) {
+    throw new Error("Scoring weights must be finite numbers between 0 and 1.");
+  }
+
   const sum =
     weights.promptRelevance +
     weights.semanticMatch +

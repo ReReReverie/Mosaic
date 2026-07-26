@@ -8,7 +8,22 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: "Creative Reference Assistant",
-  description: "An analytical AI partner for graphic and visual designers. From brief to moodboard — faster.",
+  description:
+    "Turn a creative brief and your own reference folder into an explainable, accessible visual board.",
+  applicationName: "Creative Reference Assistant",
+  keywords: ["creative direction", "moodboard", "visual references", "design workflow"],
+  openGraph: {
+    title: "Creative Reference Assistant",
+    description:
+      "Build explainable visual reference boards from your creative brief.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "Creative Reference Assistant",
+    description:
+      "Build explainable visual reference boards from your creative brief.",
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

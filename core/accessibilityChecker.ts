@@ -29,7 +29,7 @@ function checkPaletteContrast(
     ?.value as string | undefined;
   const target = standard === "AAA" ? AAA_NORMAL : AA_NORMAL;
 
-  for (const [key, p] of Object.entries(palette) as [
+  for (const [, p] of Object.entries(palette) as [
     keyof PaletteSet,
     PaletteSet[keyof PaletteSet]
   ][]) {
