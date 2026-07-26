@@ -108,6 +108,15 @@ For later setup:
 
 If `DATABASE_URL` is omitted, the app still runs using browser-local state.
 
+### Hosted Vercel demo
+
+The shared Vercel demo can use a project-provided free-tier API configuration
+for hackathon testing. Because that configuration is shared, response speed
+and usage limits may vary. For a faster and less constrained experience, users
+can deploy their own Vercel instance and set their own `OPENAI_API_KEY` as a
+server-only environment variable. The local installation does not require this
+key.
+
 ### Vercel deployment (deferred)
 
 Vercel is not required to install or test the app on a device. When deployment
