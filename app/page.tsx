@@ -49,6 +49,21 @@ const EXAMPLES = [
   "Dark, photographic campaign for a jazz music festival.",
 ];
 
+async function deriveClientFileId(file: File): Promise<string> {
+  const relativePath =
+    (file as File & { webkitRelativePath?: string }).webkitRelativePath ||
+    file.name;
+  const raw = `${relativePath}::${file.size}::${file.lastModified}`;
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(raw)
+  );
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 32);
+}
+
 // ─── Landing Page ─────────────────────────────────────────────────────────────
 export default function HomePage() {
   const router = useRouter();
@@ -109,6 +124,10 @@ export default function HomePage() {
       fd.append("constraints", JSON.stringify(constraints));
       fd.append("pinnedIds", JSON.stringify(pinnedIds));
       fd.append("removedIds", JSON.stringify(removedIds));
+      fd.append(
+        "clientFileIds",
+        JSON.stringify(await Promise.all(files.map(deriveClientFileId)))
+      );
       files.forEach((f) => fd.append("files", f));
 
       const res = await fetch("/api/analyze", { method: "POST", body: fd });

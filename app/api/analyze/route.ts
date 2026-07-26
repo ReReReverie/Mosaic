@@ -124,6 +124,7 @@ export async function POST(req: NextRequest) {
     const weights = parseWeights(formData.get("weights"));
     const pinnedIds = parseIdList(formData.get("pinnedIds"), "pinnedIds");
     const removedIds = parseIdList(formData.get("removedIds"), "removedIds");
+    const clientFileIds = parseIdList(formData.get("clientFileIds"), "clientFileIds");
     const constraints = parseConstraints(formData.get("constraints"));
     const entries = formData
       .getAll("files")
@@ -138,6 +139,12 @@ export async function POST(req: NextRequest) {
         { status: 413 }
       );
     }
+    if (clientFileIds.length > 0 && clientFileIds.length !== entries.length) {
+      throw new Error("clientFileIds must match the number of uploaded files.");
+    }
+    if (clientFileIds.some((id) => !/^[a-f0-9]{32}$/i.test(id))) {
+      throw new Error("clientFileIds contains an invalid file ID.");
+    }
 
     const totalBytes = entries.reduce((sum, entry) => sum + entry.size, 0);
     if (totalBytes > MAX_TOTAL_BYTES) {
@@ -151,11 +158,19 @@ export async function POST(req: NextRequest) {
     const fileBuffers = new Map<string, Buffer>();
     const skippedFiles = [] as ReturnType<typeof scanFiles>["skipped"];
 
-    for (const entry of entries) {
+    const seenIds = new Set<string>();
+    for (const [index, entry] of entries.entries()) {
       const scanned = scanFiles([toBrowserInput(entry)]);
       skippedFiles.push(...scanned.skipped);
-      const referenceFile = scanned.files[0];
-      if (!referenceFile) continue;
+      const scannedFile = scanned.files[0];
+      if (!scannedFile) continue;
+
+      const clientId = clientFileIds[index];
+      const referenceFile = clientId ? { ...scannedFile, id: clientId } : scannedFile;
+      if (seenIds.has(referenceFile.id)) {
+        throw new Error("Each uploaded file must have a unique path and metadata.");
+      }
+      seenIds.add(referenceFile.id);
 
       referenceFiles.push(referenceFile);
       fileBuffers.set(referenceFile.id, Buffer.from(await entry.arrayBuffer()));

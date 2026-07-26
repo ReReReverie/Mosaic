@@ -13,7 +13,7 @@ An analytical AI partner for graphic and visual designers. Enter a creative brie
 ```bash
 # Clone and install
 cd creative-reference-assistant
-npm install
+npm ci
 
 # Copy env template
 cp .env.example .env.local
@@ -41,6 +41,11 @@ npm test
 npm run build
 npm start
 ```
+
+The production build requires a Node.js host because image and PDF analysis use
+server-side libraries. Uploaded files are validated server-side, limited to
+50 MB per file and 250 MB per analysis, and are kept in the active browser
+session rather than persisted to local storage.
 
 ## Usage
 
