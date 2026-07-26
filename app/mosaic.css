@@ -17,10 +17,11 @@ body {
 
 .mosaic-shell {
   box-sizing: border-box;
-  max-width: 1540px;
+  width: 100%;
+  max-width: 1920px;
   min-height: 100vh;
   margin: 0 auto;
-  padding: 0 44px 26px;
+  padding: 0 clamp(32px, 3.3vw, 64px) 26px;
   color: var(--mosaic-ink);
   font-family: Arial, Helvetica, sans-serif;
 }
@@ -1202,6 +1203,17 @@ body {
 
 @keyframes mosaic-spin {
   to { transform: rotate(360deg); }
+}
+
+@media (min-width: 1440px) {
+  .mosaic-workspace-grid {
+    grid-template-columns: 320px minmax(0, 1fr) 320px;
+    gap: 24px;
+  }
+
+  .mosaic-reference-image {
+    height: clamp(220px, 15vw, 290px);
+  }
 }
 
 @media (max-width: 1180px) {
