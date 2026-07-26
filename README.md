@@ -2,50 +2,163 @@
 
 An analytical AI partner for graphic and visual designers. Enter a creative brief, select a reference folder, and get a ranked moodboard with explainable reasons, Style DNA, diversity suggestions, palette recommendations, and accessibility warnings.
 
-## Local Setup
+## Installation
+
+This section is written for a teammate or hackathon judge starting on a fresh
+device. The default setup does not require an OpenAI API key or a Neon account;
+the app uses deterministic analysis and browser-local state when those services
+are not configured.
 
 ### Prerequisites
 
-- Node.js 18+
-- npm 9+
-- (Optional) GraphicsMagick or ImageMagick for PDF thumbnail generation
+- Node.js 20.9 or newer: [nodejs.org/download](https://nodejs.org/download)
+- npm 10 or newer (installed with Node.js)
+- A modern Chromium-based browser such as Chrome or Edge
+- Optional: GraphicsMagick or ImageMagick for PDF thumbnails
+
+Check the installed versions before continuing:
 
 ```bash
-# Clone and install
-cd creative-reference-assistant
-npm ci
-
-# Copy env template
-cp .env.example .env.local
-# Add your OpenAI API key if you want AI-enhanced prompt parsing (optional)
-# OPENAI_API_KEY=sk-...
+node --version
+npm --version
 ```
 
-### Development
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/RodelioC03/creative-reference-assistant.git
+cd creative-reference-assistant
+```
+
+### 2. Install dependencies
+
+Run this from the project directory:
+
+```bash
+npm ci
+```
+
+### 3. Create the local environment file
+
+On macOS or Linux:
+
+```bash
+cp .env.example .env.local
+```
+
+On Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
+Leave the copied file unchanged for the fastest demo. In particular, leave
+`OPENAI_API_KEY` and `DATABASE_URL` empty for now. Never commit `.env.local` or
+put secrets in variables prefixed with `NEXT_PUBLIC_`.
+
+### 4. Start the website
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:9000](http://localhost:9000) in your browser. Enter a
+brief, choose a folder of reference files, and run the analysis. Supported
+inputs include common image files, PDFs, SVGs, text files, and documents.
 
-### Tests
+### Quick-start command list
+
+For a judge who only needs to run the demo:
 
 ```bash
-npm test
+git clone https://github.com/RodelioC03/creative-reference-assistant.git
+cd creative-reference-assistant
+npm ci
+npm run dev
 ```
 
-### Build
+Then open [http://localhost:9000](http://localhost:9000).
+
+### API configuration (deferred)
+
+No API configuration is needed to test the website locally. The deterministic
+analysis path is enabled by default, so leave both values empty:
+
+```dotenv
+OPENAI_API_KEY=
+DATABASE_URL=
+```
+
+The optional OpenAI enhancement and Neon persistence can be connected later.
+If you add either service in the future, restart `npm run dev` and keep all
+credentials server-side; never expose them through client-side code.
+
+### Neon persistence (deferred)
+
+Neon is not required for this installation. When backend configuration is
+ready, it can store analysis-session metadata so a saved board can be restored
+after a browser refresh. Uploaded source files remain ephemeral.
+
+For later setup:
+
+1. Create a PostgreSQL database at [neon.tech](https://neon.tech).
+2. Run [`db/schema.sql`](db/schema.sql) in the Neon SQL Editor.
+3. Add the connection string to `.env.local` as `DATABASE_URL`.
+4. Restart the development server.
+
+If `DATABASE_URL` is omitted, the app still runs using browser-local state.
+
+### Vercel deployment (deferred)
+
+Vercel is not required to install or test the app on a device. When deployment
+is ready, import the repository as a standard Next.js project and keep these
+defaults:
+
+- Framework preset: Next.js
+- Build command: `npm run build`
+- Output directory: leave the Vercel default
+- Node.js version: 20.x or newer
+
+Leave Vercel environment variables empty until backend configuration is ready.
+The analysis route uses the Node.js runtime for image and PDF processing.
+
+For a hackathon demo, use a small reference folder. Uploaded files are sent to
+the analysis endpoint for the active session and are not durable file storage;
+cross-device file persistence would require object storage such as Vercel Blob,
+S3, or R2.
+
+### Verification commands
+
+Run these before submitting or deploying:
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+To run the production build locally:
 
 ```bash
 npm run build
 npm start
 ```
 
-The production build requires a Node.js host because image and PDF analysis use
-server-side libraries. Uploaded files are validated server-side, limited to
-50 MB per file and 250 MB per analysis, and are kept in the active browser
-session rather than persisted to local storage.
+Then open [http://localhost:9000](http://localhost:9000).
+
+### Troubleshooting
+
+- **`npm ci` fails:** confirm `node --version` is at least `20.9.0`, then run
+  the command again from the repository root.
+- **Port 9000 is already in use:** stop the other process, or run
+  `npm run dev -- -p 9001` and open `http://localhost:9001`.
+- **No AI key:** this is expected; deterministic prompt interpretation is the
+  default behavior.
+- **PDFs have no thumbnail:** install GraphicsMagick or ImageMagick. PDF text
+  analysis still works without either dependency.
+- **Neon session not found:** verify `DATABASE_URL`, run `db/schema.sql`, and
+  restart the server. Existing uploads still need to be selected again because
+  source files are intentionally not persisted.
 
 ## Usage
 

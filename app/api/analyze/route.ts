@@ -10,6 +10,8 @@ import { DEFAULT_SCORING_WEIGHTS } from "@/core/types";
 import { runAnalysis } from "@/core/orchestrator";
 import { validateWeights } from "@/core/ranker";
 import { scanFiles, type BrowserFileInput } from "@/core/scanner";
+import { getRequestKey, consumeRateLimit } from "@/lib/rateLimit";
+import { saveAnalysisSession } from "@/lib/sessionStore";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -104,6 +106,17 @@ function toBrowserInput(entry: File): BrowserFileInput {
 }
 
 export async function POST(req: NextRequest) {
+  const rateLimit = consumeRateLimit(getRequestKey(req.headers));
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many analyses. Please try again shortly." },
+      {
+        status: 429,
+        headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+      }
+    );
+  }
+
   let formData: FormData;
   try {
     formData = await req.formData();
@@ -202,6 +215,7 @@ export async function POST(req: NextRequest) {
 
           for await (const event of generator) {
             if (event.type === "done" && event.result) {
+              await saveAnalysisSession(event.result);
               await registerThumbnails(event.result.references, fileBuffers);
             }
             controller.enqueue(encoder.encode(`${JSON.stringify(event)}\\n`));

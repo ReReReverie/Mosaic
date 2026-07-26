@@ -21,11 +21,41 @@ const TOP_N = 12;
 export default function BoardPage() {
   const router = useRouter();
   const {
-    result, brief, pinnedIds, removedIds,
+    result, brief, sessionId, pinnedIds, removedIds,
     uploadedFiles,
-    pinReference, unpinReference, removeReference, markTooSimilar, resetReview,
+    setResult, pinReference, unpinReference, removeReference, markTooSimilar, resetReview,
   } = useBoardStore();
   const [isExporting, setIsExporting] = React.useState(false);
+  const [isHydrating, setIsHydrating] = React.useState(() => !result);
+
+  React.useEffect(() => {
+    if (result || !sessionId) return;
+
+    let active = true;
+
+    fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+      headers: { Accept: "application/json" },
+    })
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => null)) as {
+          result?: typeof result;
+        } | null;
+        if (!response.ok || !payload?.result) {
+          throw new Error(payload?.result ? "Unable to load saved session." : "Session not found.");
+        }
+        if (active) setResult(payload.result);
+      })
+      .catch(() => {
+        // A missing or expired session falls through to the empty-state UI.
+      })
+      .finally(() => {
+        if (active) setIsHydrating(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [result, sessionId, setResult]);
 
   if (!result) {
     return (
@@ -34,8 +64,10 @@ export default function BoardPage() {
         style={{ background: "var(--surface-1)" }}
       >
         <div className="text-center">
-          <p className="t-headline mb-2">No analysis yet</p>
-          <p className="t-body mb-6">Start from a brief and a reference folder.</p>
+          <p className="t-headline mb-2">{isHydrating ? "Loading saved board…" : "No analysis yet"}</p>
+          <p className="t-body mb-6">
+            {isHydrating ? "Restoring the latest session from Neon." : "Start from a brief and a reference folder."}
+          </p>
           <Button
             onClick={() => router.push("/")}
             style={{ background: "var(--lime)", color: "#0c0c0f" }}
