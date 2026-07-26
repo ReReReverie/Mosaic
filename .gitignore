@@ -18,6 +18,17 @@
 /.vinext/
 /out/
 
+# alternate build and deployment tooling
+/dist/
+/.wrangler/
+/outputs/
+/work/
+dev.stdout.log
+dev.stderr.log
+
+# production
+/build
+
 # misc
 .DS_Store
 *.pem
@@ -30,16 +41,11 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
 
 # typescript
+*.tsbuildinfo
 next-env.d.ts
-/dist/
-/.wrangler/
-/outputs/
-/work/
-# local dev logs
-dev.stdout.log
-dev.stderr.log

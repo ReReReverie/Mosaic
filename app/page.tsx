@@ -1,25 +1,577 @@
-﻿"use client";
-import { useState, type ChangeEvent } from "react";
+"use client";
 
-type Source = "local" | "online";
-type Reference = { id: string; source: Source; title: string; previewUrl: string; sourceUrl?: string; provider?: string; creator?: string; license?: string; score: number; reasons: string[]; analysis: { angle: string; placement: string; crop: string; lighting: string; perspective: string; focal: string; negativeSpace: string; texture: string; brightness: number; contrast: number; ratio: number; tags: string[]; colors: string[] } };
+import React, { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { useBoardStore } from "@/lib/store";
+import type { ProgressEvent } from "@/core/types";
 
-const online: Reference[] = [
- { id: "apple", source: "online", title: "Warm apple crumble, Copenhagen Street Food Market", previewUrl: "https://commons.wikimedia.org/wiki/Special:FilePath/Warm%20apple%20crumble%2C%20Copenhagen%20Street%20Food%20Market.jpg?width=900", sourceUrl: "https://commons.wikimedia.org/wiki/File:Warm_apple_crumble,_Copenhagen_Street_Food_Market.jpg", provider: "Wikimedia Commons", creator: "Philip Mallis", license: "CC BY-SA 2.0", score: 91, reasons: ["Warm food subject", "Portrait crop fits a poster", "Rich amber palette"], analysis: { angle: "Eye-level close-up", placement: "Centered subject", crop: "Tight portrait crop", lighting: "Warm side light", perspective: "Shallow depth", focal: "Dessert texture", negativeSpace: "Limited", texture: "Crisp and tactile", brightness: .58, contrast: .72, ratio: .75, tags: ["warm", "food", "editorial", "portrait"], colors: ["#B65A2A", "#F1C77A", "#6C321F"] } },
- { id: "night", source: "online", title: "Busting night market food stall", previewUrl: "https://commons.wikimedia.org/wiki/Special:FilePath/DFC%202568%20A%20bustling%20night%20market%20food%20stall%20in%20Thailand%20with%20customers%20browsing%20grilled%20skewers%20and%20a%20vendor%20preparing%20orders%20under%20warm%20hanging%20lights.jpg?width=900", sourceUrl: "https://commons.wikimedia.org/wiki/File:DFC_2568_A_bustling_night_market_food_stall_in_Thailand_with_customers_browsing_grilled_skewers_and_a_vendor_preparing_orders_under_warm_hanging_lights.jpg", provider: "Wikimedia Commons", creator: "PattayaPatrol", license: "CC BY-SA 4.0", score: 87, reasons: ["Warm social atmosphere", "High-contrast lighting", "Adds human context"], analysis: { angle: "Eye-level environmental shot", placement: "Layered subjects", crop: "Wide landscape crop", lighting: "Warm practical lights", perspective: "Deep receding scene", focal: "Lit food counter", negativeSpace: "Moderate", texture: "Busy market detail", brightness: .38, contrast: .9, ratio: 1.5, tags: ["warm", "food", "community", "night"], colors: ["#F2A23A", "#252225", "#B33D28"] } },
- { id: "cook", source: "online", title: "Woman selling cooked food at the market", previewUrl: "https://commons.wikimedia.org/wiki/Special:FilePath/Woman%20selling%20cooked%20food%20at%20the%20market.jpg?width=900", sourceUrl: "https://commons.wikimedia.org/wiki/File:Woman_selling_cooked_food_at_the_market.jpg", provider: "Wikimedia Commons", creator: "Christine Xuereb Seidu", license: "CC BY-SA 4.0", score: 84, reasons: ["Human-centered storytelling", "Natural warm colors", "Useful subject placement"], analysis: { angle: "Eye-level portrait", placement: "Subject offset left", crop: "Medium portrait crop", lighting: "Soft daylight", perspective: "Contextual background depth", focal: "Seller and prepared food", negativeSpace: "Moderate right side", texture: "Natural fabric and food", brightness: .64, contrast: .56, ratio: .8, tags: ["warm", "food", "people", "documentary"], colors: ["#A55D31", "#D5A85B", "#3E513A"] } },
+// ─── Feature cards data ───────────────────────────────────────────────────────
+const FEATURES = [
+  {
+    icon: "⬡",
+    title: "Brief Interpretation",
+    desc: "Natural language parsed into structured creative signals — mood, style, audience, and color direction.",
+  },
+  {
+    icon: "◈",
+    title: "Explainable Ranking",
+    desc: "Every reference card shows evidence-based reasons. No black-box scores.",
+  },
+  {
+    icon: "◉",
+    title: "Style DNA",
+    desc: "Shared visual characteristics of your top references — aggregated, not generated.",
+  },
+  {
+    icon: "⊞",
+    title: "Diversity Alerts",
+    desc: "Detects repetitive boards and recommends alternatives from your own folder.",
+  },
+  {
+    icon: "◐",
+    title: "Palette Engine",
+    desc: "Three palette variants derived from your references with WCAG contrast checks.",
+  },
+  {
+    icon: "◻",
+    title: "Accessibility Checker",
+    desc: "Contrast ratios, color-blind risk, resolution and aspect-ratio compatibility.",
+  },
 ];
 
-function direction(prompt: string) { const p = prompt.toLowerCase(); const find = (values: string[], fallback: string) => values.find((value) => p.includes(value)) ?? fallback; return { subject: find(["food", "market", "product", "people", "nature", "architecture"], "visual subject"), mood: find(["warm", "calm", "playful", "bold", "serious", "energetic", "welcoming"], "considered"), style: find(["editorial", "minimal", "retro", "experimental", "handmade", "modern", "documentary"], "visual"), audience: find(["young adults", "students", "families", "designers", "community"], "defined audience") }; }
-function makeLocal(file: File, index: number): Reference { const url = URL.createObjectURL(file); const ext = file.name.split(".").pop() ?? "file"; return { id: `local-${index}`, source: "local", title: file.name, previewUrl: url, score: 62, reasons: ["Attached from local library", ext.toUpperCase() + " metadata available"], analysis: { angle: "Browser preview", placement: "To be inspected", crop: "File proportion", lighting: "Pixel analysis queued", perspective: "Local asset", focal: "Detected visual region", negativeSpace: "Pending analysis", texture: "Pixel-level signals", brightness: .5, contrast: .5, ratio: 1, tags: [ext, "local"], colors: ["#9B8B79"] } }; }
-function palette(refs: Reference[]) { const colors = refs.flatMap((r) => r.analysis.colors); const p = colors[0] ?? "#C97B50"; return [{ name: "Extracted base", colors: ["#F4EBDD", "#D6C2A8", p, colors[1] ?? "#56705B", "#1C2432"] }, { name: "Warm harmony", colors: ["#F5E4C3", "#D98A4E", p, "#56705B", "#253044"] }, { name: "Contrast-aware", colors: ["#F7F4EC", "#D8E3D4", "#254B45", "#D66743", "#18212D"] }]; }
+const EXAMPLES = [
+  "Warm, editorial poster about local food for young adults.",
+  "Minimal, high-contrast branding for a tech startup.",
+  "Dark, photographic campaign for a jazz music festival.",
+];
 
-export default function Home() { const [prompt, setPrompt] = useState("Find references for a warm, editorial poster about local food for young adults."); const [auto, setAuto] = useState(false); const [files, setFiles] = useState<File[]>([]); const [refs, setRefs] = useState<Reference[]>([]); const [tab, setTab] = useState<"all" | Source>("all"); const [pinned, setPinned] = useState<string[]>([]); const [removed, setRemoved] = useState<string[]>([]); const [open, setOpen] = useState<string | null>(null); const [status, setStatus] = useState("idle"); const [notice, setNotice] = useState(""); const [format, setFormat] = useState("A3 portrait poster"); const [accessibility, setAccessibility] = useState("Accessible contrast"); const intent = direction(prompt); const visible = refs.filter((r) => !removed.includes(r.id)); const filtered = visible.filter((r) => tab === "all" || r.source === tab); const selected = visible.filter((r) => pinned.includes(r.id) || r.score >= 70).slice(0, 8); const palettes = palette(selected); const dna = selected.length ? `${selected.filter((r) => r.analysis.tags.includes("warm")).length >= selected.length / 2 ? "Warm" : "Balanced"}, ${selected.filter((r) => r.analysis.brightness < .48).length > selected.length / 2 ? "high-contrast" : "soft-contrast"}, ${selected.filter((r) => r.analysis.ratio < 1).length > selected.length / 2 ? "portrait-led" : "mixed-format"} reference language.` : "Select references to reveal the visual patterns the board is converging on.";
- const run = async () => { if (!files.length && !auto) { setNotice("Attach a folder or enable Automatic Search to begin."); return; } setStatus("scanning"); setNotice(""); let discovered: Reference[] = []; if (auto) { await new Promise((resolve) => setTimeout(resolve, 450)); try { const response = await fetch("/api/discover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, intent, format, accessibility }) }); if (response.ok) discovered = (await response.json()).references as Reference[]; } catch { discovered = online; } if (!discovered.length) discovered = online; } const local = files.map(makeLocal); const all = [...local, ...discovered].filter((r) => !removed.includes(r.id)).map((r) => { const text = `${r.title} ${r.analysis.tags.join(" ")}`.toLowerCase(); const match = text.includes(intent.subject) ? 14 : 0; const mood = text.includes(intent.mood) ? 8 : 0; const fit = format.includes("portrait") && r.analysis.ratio < 1 ? 12 : 7; return { ...r, score: Math.min(99, Math.round(50 + match + mood + fit + r.analysis.contrast * 10 + r.score * .12)), reasons: Array.from(new Set([...r.reasons, text.includes(intent.subject) ? `Matches ${intent.subject} intent` : `Useful ${r.analysis.angle.toLowerCase()}`, text.includes(intent.mood) ? `${intent.mood} mood signal detected` : "Adds visual comparison"])).slice(0, 3) }; }).sort((a, b) => b.score - a.score); setRefs(all.slice(0, 12)); setStatus("ready"); };
- const download = (data: string, name: string, type: string) => { const url = URL.createObjectURL(new Blob([data], { type })); const link = document.createElement("a"); link.href = url; link.download = name; link.click(); URL.revokeObjectURL(url); };
- const exportBoard = () => { download(JSON.stringify({ prompt, intent, references: visible, palettes, exportedAt: new Date().toISOString() }, null, 2), "creative-reference-manifest.json", "application/json"); download(`<!doctype html><html><head><meta charset="utf-8"><title>Creative Reference Board</title><style>body{font-family:Arial;padding:32px;background:#f4f0e8;color:#202838}main{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.card{background:#fff;padding:14px;border-radius:14px}.card img{width:100%;height:220px;object-fit:cover;border-radius:10px}</style></head><body><h1>Creative Reference Board</h1><p>${prompt}</p><main>${visible.map((r) => `<article class="card"><img src="${r.previewUrl}" alt="${r.title}"><h3>${r.title}</h3><p>${r.source.toUpperCase()} · ${r.score}% fit</p><p>${r.reasons.join(" · ")}</p></article>`).join("")}</main></body></html>`, "posterboard.html", "text/html"); setNotice("Exported the posterboard and analysis manifest. Online references remain source-linked."); };
- return <main className="app-shell"><header className="topbar"><div className="brand-lockup"><span className="brand-mark">M</span><div><strong>MOSAIC</strong><span>creative reference lab</span></div></div><div className="topbar-meta"><span className="status-dot" /> local-first analysis <span className="slash">/</span> v0.1 concept</div></header><section className="hero"><div><p className="eyebrow">AI-ASSISTED VISUAL RESEARCH</p><h1>Find the visual language<br /><em>before</em> you make the thing.</h1><p className="hero-subtitle">Mosaic turns a creative brief and a messy reference library into a ranked, explainable board—then shows you what the references have in common.</p></div><div className="hero-note"><span>01</span><p>Analysis, not generation.<br /><strong>Your eye stays in charge.</strong></p></div></section><section className="workspace-grid"><aside className="brief-column"><div className="panel brief-panel"><div className="panel-heading"><div><p className="eyebrow">START WITH A BRIEF</p><h2>Set the direction</h2></div><span className="step-number">01</span></div><label className="field-label" htmlFor="brief">What are you making?</label><textarea id="brief" value={prompt} onChange={(e) => setPrompt(e.target.value)} /><div className="chips"><span className="chip warm">{intent.mood}</span><span className="chip">{intent.style}</span><span className="chip">{intent.subject}</span><span className="chip">poster</span></div><div className="divider" /><div className="input-heading"><div><p className="field-label">REFERENCE SOURCES</p><p className="helper">Bring your own library, discover online, or both.</p></div><button className={`toggle ${auto ? "on" : ""}`} onClick={() => setAuto(!auto)} aria-pressed={auto}><span />{auto ? "AUTO ON" : "AUTO OFF"}</button></div><label className="folder-drop"><input type="file" multiple onChange={(e: ChangeEvent<HTMLInputElement>) => setFiles(Array.from(e.target.files ?? []))} {...({ webkitdirectory: "" } as Record<string, string>)} /><span className="folder-icon">+</span><strong>{files.length ? `${files.length} files attached` : "Attach a reference folder"}</strong><small>{files.length ? "Ready for local analysis" : "PNG, JPG, PDF, SVG, TXT and more"}</small></label>{auto && <div className="provider-row"><span className="provider-badge">◎</span><div><strong>Open-license discovery</strong><small>Wikimedia Commons · provider links enabled</small></div><span className="ready-label">READY</span></div>}<div className="divider" /><div className="field-row"><div><label className="field-label" htmlFor="format">OUTPUT FORMAT</label><select id="format" value={format} onChange={(e) => setFormat(e.target.value)}><option>A3 portrait poster</option><option>Social landscape</option><option>Editorial square</option></select></div><div><label className="field-label" htmlFor="accessibility">ACCESSIBILITY</label><select id="accessibility" value={accessibility} onChange={(e) => setAccessibility(e.target.value)}><option>Accessible contrast</option><option>Standard review</option><option>High contrast only</option></select></div></div><button className="analyze-button" onClick={run} disabled={status === "scanning"}><span>{status === "scanning" ? "ANALYZING LIBRARY" : status === "ready" ? "RERUN ANALYSIS" : "ANALYZE REFERENCES"}</span><b>↗</b></button>{notice && <p className="notice">{notice}</p>}</div><div className="mini-card"><span className="mini-icon">✳</span><div><strong>Human in the loop</strong><p>Pin, remove, and rerun until the board feels like you.</p></div></div></aside><section className="board-column"><div className="board-header"><div><p className="eyebrow">REFERENCE BOARD {status === "ready" ? "· UPDATED JUST NOW" : "· AWAITING INPUT"}</p><h2>{status === "ready" ? `${visible.length} signals for your direction` : "A considered starting point"}</h2></div><div className="board-actions"><button className="ghost-button" onClick={() => setRemoved([])}>RESET</button><button className="export-button" disabled={!refs.length} onClick={exportBoard}>EXPORT BOARD ↗</button></div></div><div className="board-toolbar"><div className="tabs"><button className={tab === "all" ? "active" : ""} onClick={() => setTab("all")}>ALL <small>{visible.length}</small></button><button className={tab === "local" ? "active" : ""} onClick={() => setTab("local")}>LOCAL <small>{visible.filter((r) => r.source === "local").length}</small></button><button className={tab === "online" ? "active" : ""} onClick={() => setTab("online")}>ONLINE <small>{visible.filter((r) => r.source === "online").length}</small></button></div><span className="board-sort">RANKED BY FIT <span>↓</span></span></div>{status === "idle" ? <div className="empty-board"><div className="empty-glyph">M</div><h3>Your board starts here.</h3><p>Write a brief, attach a folder, or toggle Automatic Search. Mosaic will return references with the reasoning attached.</p><div className="empty-lines"><span /><span /><span /></div></div> : status === "scanning" ? <div className="loading-board"><span className="loader" /><p>Reading visual signals and checking source metadata…</p><div className="progress-track"><span /></div></div> : <div className="reference-grid">{filtered.map((r) => <ReferenceCard key={r.id} reference={r} pinned={pinned.includes(r.id)} expanded={open === r.id} onPin={() => setPinned((current) => current.includes(r.id) ? current.filter((id) => id !== r.id) : [...current, r.id])} onRemove={() => setRemoved((current) => [...current, r.id])} onExpand={() => setOpen(open === r.id ? null : r.id)} />)}</div>}{status === "ready" && <div className="board-footer"><span><i className="legend-local" /> Local analysis stays on your device</span><span><i className="legend-online" /> Online references retain attribution</span></div>}</section><aside className="insights-column"><div className="insight-card"><div className="insight-title"><span className="index">02</span><div><p className="eyebrow">BRIEF SIGNALS</p><h3>Creative direction</h3></div></div><div className="direction-grid">{[["SUBJECT", intent.subject], ["MOOD", intent.mood], ["STYLE", intent.style], ["AUDIENCE", intent.audience]].map(([label, value]) => <div className="insight-pill" key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><p className="insight-copy">{prompt.length > 20 ? "The brief is specific enough to search. Mosaic will use these signals to explain every selection." : "Add more detail to make the ranking more specific."}</p></div><div className="insight-card"><div className="insight-title"><span className="index">03</span><div><p className="eyebrow">PATTERN READ</p><h3>Style DNA</h3></div></div><p className="style-summary">{dna}</p><Bar label="Warmth" value={selected.length ? 70 : 0} /><Bar label="Contrast" value={selected.length ? 78 : 0} /><Bar label="Portrait" value={selected.length ? 62 : 0} /></div><div className="insight-card palette-card"><div className="insight-title"><span className="index">04</span><div><p className="eyebrow">COLOR STUDY</p><h3>Palette directions</h3></div></div><div className="palette-list">{palettes.map((p) => <div className="palette-row" key={p.name}><div className="palette-label"><strong>{p.name}</strong><span>{p.name === "Contrast-aware" ? "CHECK CONTRAST" : "READY TO EXPLORE"}</span></div><div className="swatches">{p.colors.map((color) => <span key={color} title={color} style={{ background: color }} />)}</div></div>)}</div></div><div className="insight-card"><div className="insight-title"><span className="index">05</span><div><p className="eyebrow">BOARD CHECK</p><h3>Useful tension</h3></div></div><p className="style-summary">{selected.length < 3 ? "Add at least three references to compare visual clusters." : "The board has useful variation across angle and color. Keep one contrasting reference as a deliberate edge."}</p><div className="check-row"><span>◌</span><div><strong>Accessibility scan</strong><small>{selected.length ? "Palette pairings are being checked against your constraint." : "Runs when references are selected."}</small></div></div></div></aside></section><footer className="footer-note"><span>MOSAIC / CREATIVE REFERENCE LAB</span><span>ANALYTICAL AI · HUMAN JUDGMENT · SOURCE-AWARE</span></footer></main>; }
+async function deriveClientFileId(file: File): Promise<string> {
+  const relativePath =
+    (file as File & { webkitRelativePath?: string }).webkitRelativePath ||
+    file.name;
+  const raw = `${relativePath}::${file.size}::${file.lastModified}`;
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(raw)
+  );
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 32);
+}
 
-function Bar({ label, value }: { label: string; value: number }) { return <div className="dna-bar"><div><span>{label}</span><strong>{value}%</strong></div><span className="bar-track"><i style={{ width: `${value}%` }} /></span></div>; }
-function ReferenceCard({ reference, pinned, expanded, onPin, onRemove, onExpand }: { reference: Reference; pinned: boolean; expanded: boolean; onPin: () => void; onRemove: () => void; onExpand: () => void }) { return <article className="reference-card"><div className="reference-image-wrap"><img src={reference.previewUrl} alt={reference.title} /><div className="source-label"><span className={reference.source}>{reference.source === "online" ? "ONLINE" : "LOCAL"}</span>{reference.source === "online" && <span className="license-label">{reference.license ?? "LICENSE CHECK"}</span>}</div><div className="score-badge">{reference.score}<small>% FIT</small></div></div><div className="reference-body"><div className="reference-topline"><div><p className="reference-kicker">{reference.provider ?? "ATTACHED LIBRARY"}</p><h3>{reference.title}</h3></div><button className={`pin-button ${pinned ? "pinned" : ""}`} onClick={onPin} aria-label={pinned ? "Unpin reference" : "Pin reference"}>{pinned ? "●" : "○"}</button></div><p className="analysis-summary"><strong>{reference.analysis.angle}</strong> · {reference.analysis.placement.toLowerCase()} · {reference.analysis.lighting.toLowerCase()}</p><div className="card-tags">{reference.analysis.tags.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}</div><div className="reason-list">{reference.reasons.slice(0, 2).map((reason) => <span key={reason}>+ {reason}</span>)}</div><div className="reference-actions"><button onClick={onExpand}>{expanded ? "Hide analysis" : "View analysis"} <span>↘</span></button>{reference.sourceUrl && <a href={reference.sourceUrl} target="_blank" rel="noreferrer">Open source ↗</a>}<button className="remove-action" onClick={onRemove}>Remove</button></div>{expanded && <div className="analysis-drawer"><div className="analysis-heading"><span>OBSERVABLE SIGNALS</span><small>Derived from preview and metadata</small></div><div className="analysis-grid">{[["Angle", reference.analysis.angle], ["Placement", reference.analysis.placement], ["Crop", reference.analysis.crop], ["Perspective", reference.analysis.perspective], ["Focal point", reference.analysis.focal], ["Negative space", reference.analysis.negativeSpace], ["Lighting", reference.analysis.lighting], ["Texture", reference.analysis.texture]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><div className="detail-row"><span>DOMINANT COLORS</span><div className="tiny-swatches">{reference.analysis.colors.map((color) => <i key={color} title={color} style={{ background: color }} />)}</div></div>{reference.source === "online" && <div className="attribution"><span>ATTRIBUTION</span><strong>{reference.creator ?? "Creator not supplied"} · {reference.license ?? "License unavailable"}</strong></div>}</div>}</div></article>; }
+// ─── Landing Page ─────────────────────────────────────────────────────────────
+export default function HomePage() {
+  const router = useRouter();
+  const {
+    brief,
+    setBrief,
+    setResult,
+    setUploadedFiles,
+    scoringWeights,
+    constraints,
+    setConstraints,
+    pinnedIds,
+    removedIds,
+  } = useBoardStore();
+  const [files, setFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [progressMsg, setProgressMsg] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
+  function handleFiles(list: FileList | null) {
+    if (!list) return;
+    const unique = new Map<string, File>();
+    for (const file of Array.from(list)) {
+      const relativePath =
+        (file as File & { webkitRelativePath?: string }).webkitRelativePath ||
+        file.name;
+      unique.set(`${relativePath}:${file.size}:${file.lastModified}`, file);
+    }
+    setFiles([...unique.values()]);
+  }
+
+  function updateConstraint(type: "format" | "output", value: string) {
+    const next = constraints.filter((constraint) => constraint.type !== type);
+    if (value !== "any" && value !== "both") {
+      next.push({
+        type,
+        value,
+        description: `${type === "format" ? "Format" : "Output"}: ${value}`,
+      });
+    }
+    setConstraints(next);
+  }
+
+  async function handleAnalyze() {
+    if (!brief.trim() || files.length === 0) return;
+    setIsLoading(true);
+    setError(null);
+    setProgress(2);
+    setProgressMsg("Preparing…");
+
+    try {
+      const fd = new FormData();
+      fd.append("brief", brief.trim());
+      fd.append("weights", JSON.stringify(scoringWeights));
+      fd.append("constraints", JSON.stringify(constraints));
+      fd.append("pinnedIds", JSON.stringify(pinnedIds));
+      fd.append("removedIds", JSON.stringify(removedIds));
+      fd.append(
+        "clientFileIds",
+        JSON.stringify(await Promise.all(files.map(deriveClientFileId)))
+      );
+      files.forEach((f) => fd.append("files", f));
+
+      const res = await fetch("/api/analyze", { method: "POST", body: fd });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error ?? `Server error ${res.status}`);
+      }
+      if (!res.body) throw new Error("The analysis stream was unavailable.");
+
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+
+      let completed = false;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let ev: ProgressEvent;
+          try {
+            ev = JSON.parse(line) as ProgressEvent;
+          } catch {
+            continue;
+          }
+          setProgress(ev.progress);
+          setProgressMsg(ev.message);
+          if (ev.type === "error") throw new Error(ev.error ?? "Analysis failed.");
+          if (ev.type === "done" && ev.result) {
+            const uploaded = files.flatMap((file) => {
+              const match = ev.result?.references.find(
+                (reference) =>
+                  reference.file.filename === file.name &&
+                  reference.file.sizeBytes === file.size &&
+                  reference.file.lastModified === file.lastModified
+              );
+              return match ? [{ id: match.file.id, file }] : [];
+            });
+            setUploadedFiles(uploaded);
+            setResult(ev.result);
+            completed = true;
+            router.push("/board");
+            return;
+          }
+        }
+      }
+      if (!completed) throw new Error("Analysis ended before completion.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "An error occurred.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const canSubmit = brief.trim().length >= 5 && files.length > 0 && !isLoading;
+  const selectedFormat = String(
+    constraints.find((constraint) => constraint.type === "format")?.value ?? "any"
+  );
+  const selectedOutput = String(
+    constraints.find((constraint) => constraint.type === "output")?.value ?? "both"
+  );
+
+  return (
+    <main className="min-h-screen" style={{ background: "var(--surface-1)" }}>
+      {/* ── Nav ──────────────────────────────────────────────────────────────── */}
+      <nav
+        className="sticky top-0 z-50 flex items-center justify-between px-6 py-4"
+        style={{
+          borderBottom: "1px solid var(--border-1)",
+          background: "rgba(12,12,15,0.85)",
+          backdropFilter: "blur(20px)",
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <span
+            className="text-sm font-bold tracking-tight"
+            style={{ color: "var(--lime)" }}
+          >
+            CRA
+          </span>
+          <span
+            className="text-sm font-medium"
+            style={{ color: "var(--text-1)" }}
+          >
+            Creative Reference Assistant
+          </span>
+        </div>
+        <Badge
+          variant="outline"
+          className="text-xs"
+          style={{
+            color: "var(--text-3)",
+            borderColor: "var(--border-1)",
+            background: "transparent",
+          }}
+        >
+          v1.0 · MVP
+        </Badge>
+      </nav>
+
+      {/* ── Hero ─────────────────────────────────────────────────────────────── */}
+      <section
+        className="relative overflow-hidden px-6 py-24 text-center dot-grid"
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 50% at 50% 0%, rgba(200,245,66,0.06) 0%, transparent 70%)",
+        }}
+      >
+        {/* Glow orb */}
+        <div
+          className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2"
+          style={{
+            width: 600,
+            height: 300,
+            borderRadius: "50%",
+            background: "radial-gradient(ellipse, rgba(200,245,66,0.10) 0%, transparent 70%)",
+            filter: "blur(40px)",
+          }}
+        />
+
+        <div className="relative mx-auto max-w-3xl">
+          <div className="fade-up mb-6 flex justify-center">
+            <span
+              className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold tracking-wider uppercase"
+              style={{
+                color: "var(--lime)",
+                borderColor: "rgba(200,245,66,0.25)",
+                background: "rgba(200,245,66,0.07)",
+              }}
+            >
+              <span
+                className="inline-block h-1.5 w-1.5 rounded-full"
+                style={{ background: "var(--lime)" }}
+              />
+              July Challenge · Reimagine Creative Industries with AI
+            </span>
+          </div>
+
+          <h1 className="t-display fade-up fade-up-1 mb-5">
+            Brief to moodboard.
+            <br />
+            <span style={{ color: "var(--lime)" }} className="lime-glow-text">
+              Faster.
+            </span>
+          </h1>
+
+          <p
+            className="t-body fade-up fade-up-2 mx-auto mb-10 max-w-xl text-base"
+            style={{ color: "var(--text-2)" }}
+          >
+            Upload your reference folder, describe your brief, and get a ranked
+            moodboard with explainable insights — Style DNA, diversity alerts,
+            palette recommendations, and accessibility checks. No generated
+            images, ever.
+          </p>
+
+          {/* ── Brief + upload card ─────────────────────────────────────────── */}
+          <div
+            className="fade-up fade-up-3 mx-auto w-full max-w-2xl rounded-2xl p-px"
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(200,245,66,0.15), rgba(255,255,255,0.04), transparent)",
+            }}
+          >
+            <div
+              className="rounded-2xl p-6"
+              style={{ background: "var(--surface-2)" }}
+            >
+              {/* Brief textarea */}
+              <div className="mb-4">
+                <label
+                  htmlFor="brief"
+                  className="t-label mb-2 block"
+                >
+                  Creative Brief
+                </label>
+                <Textarea
+                  id="brief"
+                  rows={3}
+                  placeholder="e.g. Warm, editorial poster about local food for young adults…"
+                  value={brief}
+                  onChange={(e) => setBrief(e.target.value)}
+                  maxLength={1000}
+                  disabled={isLoading}
+                  className="resize-none text-sm"
+                  style={{
+                    background: "var(--surface-3)",
+                    border: "1px solid var(--border-1)",
+                    color: "var(--text-1)",
+                  }}
+                />
+                {/* Example pills */}
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {EXAMPLES.map((ex, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setBrief(ex)}
+                      disabled={isLoading}
+                      className="rounded-full border px-2.5 py-0.5 text-xs transition-all"
+                      style={{
+                        color: "var(--text-3)",
+                        borderColor: "var(--border-1)",
+                        background: "transparent",
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLButtonElement).style.color = "var(--lime)";
+                        (e.currentTarget as HTMLButtonElement).style.borderColor =
+                          "rgba(200,245,66,0.3)";
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLButtonElement).style.color = "var(--text-3)";
+                        (e.currentTarget as HTMLButtonElement).style.borderColor =
+                          "var(--border-1)";
+                      }}
+                    >
+                      {ex.split(",")[0]}…
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Output constraints */}
+              <div className="mb-5 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="format" className="t-label mb-2 block">Target format</label>
+                  <select
+                    id="format"
+                    value={selectedFormat}
+                    onChange={(e) => updateConstraint("format", e.target.value)}
+                    disabled={isLoading}
+                    className="h-10 w-full rounded-lg px-3 text-sm"
+                    style={{
+                      background: "var(--surface-3)",
+                      border: "1px solid var(--border-1)",
+                      color: "var(--text-1)",
+                    }}
+                  >
+                    <option value="any">Any format</option>
+                    <option value="poster">Poster</option>
+                    <option value="social">Social</option>
+                    <option value="website">Website</option>
+                    <option value="logo">Logo</option>
+                    <option value="editorial">Editorial</option>
+                    <option value="branding">Branding</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="output" className="t-label mb-2 block">Output</label>
+                  <select
+                    id="output"
+                    value={selectedOutput}
+                    onChange={(e) => updateConstraint("output", e.target.value)}
+                    disabled={isLoading}
+                    className="h-10 w-full rounded-lg px-3 text-sm"
+                    style={{
+                      background: "var(--surface-3)",
+                      border: "1px solid var(--border-1)",
+                      color: "var(--text-1)",
+                    }}
+                  >
+                    <option value="both">Print + screen</option>
+                    <option value="print">Print</option>
+                    <option value="screen">Screen</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Folder upload */}
+              <div className="mb-5">
+                <label htmlFor="reference-files" className="t-label mb-2 block">Reference Folder</label>
+                <div
+                  className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed py-8 transition-all"
+                  role="button"
+                  tabIndex={isLoading ? -1 : 0}
+                  aria-label="Choose a reference folder"
+                  style={{
+                    borderColor: isDragging
+                      ? "var(--lime)"
+                      : "var(--border-1)",
+                    background: isDragging
+                      ? "rgba(200,245,66,0.04)"
+                      : "var(--surface-3)",
+                  }}
+                  onClick={() => inputRef.current?.click()}
+                  onKeyDown={(e) => {
+                    if ((e.key === "Enter" || e.key === " ") && !isLoading) {
+                      e.preventDefault();
+                      inputRef.current?.click();
+                    }
+                  }}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    handleFiles(e.dataTransfer.files);
+                  }}
+                >
+                  <svg
+                    width="28"
+                    height="28"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke={files.length > 0 ? "var(--lime)" : "var(--text-3)"}
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M3 7a2 2 0 012-2h3l2 2h7a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                  </svg>
+                  {files.length > 0 ? (
+                    <p className="t-title" style={{ color: "var(--lime)" }}>
+                      {files.length} file{files.length !== 1 ? "s" : ""} selected
+                    </p>
+                  ) : (
+                    <p className="t-body">
+                      Drop folder here or{" "}
+                      <span style={{ color: "var(--lime)" }}>browse</span>
+                    </p>
+                  )}
+                  <p className="t-caption">PNG, JPEG, SVG, PDF, text files · max 50 MB each</p>
+                </div>
+                <input
+                  ref={inputRef}
+                  id="reference-files"
+                  type="file"
+                  className="hidden"
+                  // @ts-expect-error webkitdirectory not in standard types
+                  webkitdirectory=""
+                  multiple
+                  accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff,image/svg+xml,application/pdf,text/plain,text/markdown,text/html,text/csv,application/json"
+                  onChange={(e) => handleFiles(e.target.files)}
+                  disabled={isLoading}
+                />
+              </div>
+
+              {/* Progress */}
+              {isLoading && (
+                <div className="mb-5 flex flex-col gap-2">
+                  <div className="flex justify-between">
+                    <span className="t-caption">{progressMsg}</span>
+                    <span className="t-caption">{progress}%</span>
+                  </div>
+                  <Progress value={progress} className="h-1" />
+                </div>
+              )}
+
+              {/* Error */}
+              {error && (
+                <div
+                  className="mb-4 rounded-lg px-4 py-3 text-sm"
+                  style={{
+                    background: "rgba(245,66,66,0.08)",
+                    border: "1px solid rgba(245,66,66,0.2)",
+                    color: "var(--error-color)",
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+
+              <Button
+                size="lg"
+                className="w-full font-semibold"
+                style={{
+                  background: canSubmit ? "var(--lime)" : "var(--surface-4)",
+                  color: canSubmit ? "#0c0c0f" : "var(--text-3)",
+                  transition: "all 0.2s",
+                }}
+                disabled={!canSubmit}
+                onClick={handleAnalyze}
+              >
+                {isLoading ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    Analysing references…
+                  </span>
+                ) : (
+                  "Analyse References →"
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Feature grid ─────────────────────────────────────────────────────── */}
+      <section
+        className="px-6 py-20"
+        style={{ borderTop: "1px solid var(--border-1)" }}
+      >
+        <div className="mx-auto max-w-5xl">
+          <p className="t-label mb-10 text-center">What it does</p>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {FEATURES.map((f, i) => (
+              <div
+                key={i}
+                className="rounded-xl p-5 transition-all"
+                style={{
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border-1)",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.borderColor =
+                    "rgba(200,245,66,0.2)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLDivElement).style.borderColor =
+                    "var(--border-1)";
+                }}
+              >
+                <span
+                  className="mb-3 block text-2xl"
+                  style={{ color: "var(--lime)" }}
+                >
+                  {f.icon}
+                </span>
+                <p className="t-title mb-1">{f.title}</p>
+                <p className="t-body text-xs">{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Footer ───────────────────────────────────────────────────────────── */}
+      <footer
+        className="px-6 py-8 text-center"
+        style={{ borderTop: "1px solid var(--border-1)" }}
+      >
+        <p className="t-caption">
+          No images are generated. Your references stay on your machine.
+          <span className="mx-2" style={{ color: "var(--border-1)" }}>·</span>
+          Built with Next.js · shadcn/ui · Sharp · GPT-4o (optional)
+        </p>
+      </footer>
+    </main>
+  );
+}
