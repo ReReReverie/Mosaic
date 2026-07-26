@@ -1,13 +1,13 @@
-# Creative Reference Assistant
+# Mosaic — Creative Reference Lab
 
-An analytical AI partner for graphic and visual designers. Enter a creative brief, select a reference folder, and get a ranked moodboard with explainable reasons, Style DNA, diversity suggestions, palette recommendations, and accessibility warnings.
+Mosaic is an analytical AI partner for graphic and visual designers. Enter a creative brief, select a reference folder, and get a ranked moodboard with explainable reasons, Style DNA, diversity suggestions, palette recommendations, and accessibility warnings.
 
 ## Installation
 
 This section is written for a teammate or hackathon judge starting on a fresh
-device. The default setup does not require an OpenAI API key or a Neon account;
-the app uses deterministic analysis and browser-local state when those services
-are not configured.
+device. The default setup does not require an API key or a Neon account; the app
+uses deterministic analysis and browser-local state when hosted services are not
+configured.
 
 ### Prerequisites
 
@@ -26,8 +26,8 @@ npm --version
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/RodelioC03/creative-reference-assistant.git
-cd creative-reference-assistant
+git clone https://github.com/ReReReverie/Mosaic.git
+cd Mosaic
 ```
 
 ### 2. Install dependencies
@@ -52,10 +52,10 @@ On Windows PowerShell:
 Copy-Item .env.example .env.local
 ```
 
-Leave the copied file unchanged for the fastest demo. Add a server-side
-`GEMINI_API_KEY` only if you want AI-assisted brief interpretation. Never
-commit `.env.local`, expose secrets through `NEXT_PUBLIC_` variables, or put a
-personal API key in a deployment environment.
+Leave the copied file unchanged for the fastest deterministic demo. Add a
+server-side `GEMINI_API_KEY` only if you want hosted AI-assisted brief
+interpretation. Never commit `.env.local`, expose secrets through `NEXT_PUBLIC_`
+variables, or put a personal API key in a deployment environment.
 
 ### 4. Start the website
 
@@ -72,8 +72,8 @@ inputs include common image files, PDFs, SVGs, text files, and documents.
 For a judge who only needs to run the demo:
 
 ```bash
-git clone https://github.com/RodelioC03/creative-reference-assistant.git
-cd creative-reference-assistant
+git clone https://github.com/ReReReverie/Mosaic.git
+cd Mosaic
 npm ci
 npm run dev
 ```
@@ -88,18 +88,38 @@ analysis path is enabled when no hosted key is configured:
 ```dotenv
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
+# Optional server-side fallback providers
 OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4o
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=claude-3-5-haiku-latest
 DATABASE_URL=
 ```
 
 For the hosted Vercel deployment, set `GEMINI_API_KEY` in Vercel's server-only
 environment variables. Gemini is the default provider. `OPENAI_API_KEY` is
-retained as a backwards-compatible fallback for existing deployments.
+retained as a backwards-compatible fallback for existing deployments; the
+Anthropic variables are available for intentional server-side configuration.
 
-The Mosaic UI also supports a session-only personal key for Google Gemini,
-OpenAI, or Anthropic. That key is sent over HTTPS in a request header, kept in
-browser memory only, and never written to Neon, localStorage, Vercel, URLs, or
-application responses. Clearing the key or starting a new session removes it.
+### Personal API keys (session-only)
+
+The Mosaic UI lets a user temporarily override the hosted Gemini provider with
+their own key. The currently supported providers are Google Gemini, OpenAI, and
+Anthropic. Other providers require a server-side provider adapter; arbitrary
+base URLs are not accepted.
+
+To use a personal key:
+
+1. Open **Use your own engine** in the left sidebar.
+2. Select Google Gemini, OpenAI, or Anthropic.
+3. Paste the provider key and run an analysis.
+4. Clear the key or start a new session when finished.
+
+The key is kept in React memory only and sent to `/api/analyze` through a
+request header for the active request. It is not stored in Neon, localStorage,
+sessionStorage, URLs, application responses, or Vercel environment variables.
+Refreshing the page or clearing the key removes it from the browser. Only the
+project's default `GEMINI_API_KEY` belongs in Vercel's server-only environment.
 
 ### Neon persistence (deferred)
 
@@ -137,8 +157,11 @@ defaults:
 - Output directory: leave the Vercel default
 - Node.js version: 20.x or newer
 
-Leave Vercel environment variables empty until backend configuration is ready.
-The analysis route uses the Node.js runtime for image and PDF processing.
+Set `GEMINI_API_KEY` only when enabling the hosted default provider. Keep it as
+a server-only variable; do not prefix it with `NEXT_PUBLIC_`. Leave the
+optional provider variables unset unless you intentionally need server-side
+fallbacks. The analysis route uses the Node.js runtime for image and PDF
+processing.
 
 For a hackathon demo, use a small reference folder. Uploaded files are sent to
 the analysis endpoint for the active session and are not durable file storage;
@@ -170,8 +193,9 @@ Then open [http://localhost:9000](http://localhost:9000).
   the command again from the repository root.
 - **Port 9000 is already in use:** stop the other process, or run
   `npm run dev -- -p 9001` and open `http://localhost:9001`.
-- **No AI key:** this is expected; deterministic prompt interpretation is the
-  default behavior.
+- **No hosted AI key:** this is expected; deterministic prompt interpretation is
+  the default behavior. A user can add a personal key from **Use your own
+  engine** for the current session.
 - **PDFs have no thumbnail:** install GraphicsMagick or ImageMagick. PDF text
   analysis still works without either dependency.
 - **Neon session not found:** verify `DATABASE_URL`, run `db/schema.sql`, and
@@ -200,9 +224,9 @@ Then open [http://localhost:9000](http://localhost:9000).
 ## AI Enhancement
 
 When `GEMINI_API_KEY` is set, Gemini improves prompt parsing and explanation
-quality. OpenAI and Anthropic are also supported for session-only personal
-overrides. The app remains fully functional without a key using deterministic
-fallbacks.
+quality. OpenAI and Anthropic are also supported as session-only personal
+overrides from the UI. The app remains fully functional without a key using
+deterministic fallbacks.
 
 ## Notes on PDF Thumbnails
 
