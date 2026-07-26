@@ -12,6 +12,7 @@ import { validateWeights } from "@/core/ranker";
 import { scanFiles, type BrowserFileInput } from "@/core/scanner";
 import { getRequestKey, consumeRateLimit } from "@/lib/rateLimit";
 import { saveAnalysisSession } from "@/lib/sessionStore";
+import { resolveAiProvider } from "@/core/aiProvider";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -117,6 +118,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  let aiProvider;
+  try {
+    aiProvider = resolveAiProvider({
+      provider: req.headers.get("x-mosaic-ai-provider"),
+      apiKey: req.headers.get("x-mosaic-ai-key"),
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Invalid AI provider configuration." },
+      { status: 400, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
   let formData: FormData;
   try {
     formData = await req.formData();
@@ -205,7 +219,7 @@ export async function POST(req: NextRequest) {
             files: referenceFiles,
             brief,
             weights,
-            apiKey: process.env.OPENAI_API_KEY ?? undefined,
+            aiProvider,
             pinnedIds,
             removedIds,
             constraints,

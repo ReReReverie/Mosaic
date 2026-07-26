@@ -5,6 +5,7 @@
 
 import React from "react";
 import type { AnalysisResult, ProgressEvent, RankedReference } from "@/core/types";
+import type { AiProvider } from "@/core/aiProvider";
 import { useBoardStore } from "@/lib/store";
 
 type Source = "local" | "online";
@@ -200,6 +201,80 @@ function InsightBar({ label, value }: { label: string; value: number }) {
   return <div className="mosaic-dna-bar"><div><span>{label}</span><strong>{value}%</strong></div><span className="mosaic-bar-track"><i style={{ width: `${value}%` }} /></span></div>;
 }
 
+const AI_PROVIDER_OPTIONS: Array<{ value: AiProvider; label: string }> = [
+  { value: "gemini", label: "Google Gemini" },
+  { value: "openai", label: "OpenAI" },
+  { value: "anthropic", label: "Anthropic Claude" },
+];
+
+function AiProviderControls({
+  provider,
+  apiKey,
+  open,
+  onToggle,
+  onProviderChange,
+  onApiKeyChange,
+  onClear,
+}: {
+  provider: AiProvider;
+  apiKey: string;
+  open: boolean;
+  onToggle: () => void;
+  onProviderChange: (provider: AiProvider) => void;
+  onApiKeyChange: (apiKey: string) => void;
+  onClear: () => void;
+}) {
+  const hasPersonalKey = apiKey.trim().length > 0;
+  return (
+    <section className="mosaic-panel mosaic-ai-panel" aria-labelledby="ai-provider-heading">
+      <div className="mosaic-panel-heading">
+        <div>
+          <p className="mosaic-eyebrow">AI PROVIDER</p>
+          <h2 id="ai-provider-heading">Use your own engine</h2>
+        </div>
+        <span className={`mosaic-ai-state ${hasPersonalKey ? "session" : "default"}`}>
+          {hasPersonalKey ? "SESSION" : "GEMINI DEFAULT"}
+        </span>
+      </div>
+      <p className="mosaic-ai-helper">
+        Gemini powers the hosted default. A personal key overrides it for this session only.
+      </p>
+      <button type="button" className="mosaic-ai-toggle" onClick={onToggle} aria-expanded={open}>
+        {open ? "Hide provider settings" : "Use a personal API key"}
+        <span>{open ? "−" : "+"}</span>
+      </button>
+      {open && (
+        <div className="mosaic-ai-fields">
+          <label className="mosaic-field-label" htmlFor="ai-provider">PROVIDER</label>
+          <select
+            id="ai-provider"
+            value={provider}
+            onChange={(event) => onProviderChange(event.target.value as AiProvider)}
+          >
+            {AI_PROVIDER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <label className="mosaic-field-label" htmlFor="personal-ai-key">PERSONAL API KEY</label>
+          <input
+            id="personal-ai-key"
+            type="password"
+            value={apiKey}
+            onChange={(event) => onApiKeyChange(event.target.value)}
+            autoComplete="new-password"
+            spellCheck={false}
+            placeholder="Paste your key"
+            aria-describedby="personal-ai-key-help"
+          />
+          <div className="mosaic-ai-key-footer">
+            <small id="personal-ai-key-help">Never stored in Neon, localStorage, or Vercel.</small>
+            {hasPersonalKey && <button type="button" onClick={onClear}>Clear key</button>}
+          </div>
+        </div>
+      )}
+      {hasPersonalKey && <p className="mosaic-ai-active" role="status">Personal {AI_PROVIDER_OPTIONS.find((option) => option.value === provider)?.label} key active for this session.</p>}
+    </section>
+  );
+}
+
 export default function HomePage() {
   const { brief: storedBrief, result, constraints, scoringWeights, pinnedIds, removedIds, uploadedFiles, setBrief, setConstraints, setResult, setUploadedFiles, startNewSession, pinReference, unpinReference, removeReference, markTooSimilar } = useBoardStore();
   const [briefInput, setBriefInput] = React.useState(storedBrief || DEFAULT_BRIEF);
@@ -215,6 +290,9 @@ export default function HomePage() {
   const [progress, setProgress] = React.useState(0);
   const [progressMessage, setProgressMessage] = React.useState("");
   const [notice, setNotice] = React.useState("");
+  const [aiProvider, setAiProvider] = React.useState<AiProvider>("gemini");
+  const [personalApiKey, setPersonalApiKey] = React.useState("");
+  const [aiSettingsOpen, setAiSettingsOpen] = React.useState(false);
 
   const direction = React.useMemo(() => inferDirection(briefInput), [briefInput]);
   const localReferences = React.useMemo(() => result?.references.map(toMosaicReference) ?? [], [result]);
@@ -275,7 +353,15 @@ export default function HomePage() {
         formData.append("removedIds", JSON.stringify(removedIds));
         formData.append("clientFileIds", JSON.stringify(clientFileIds));
         files.forEach((file) => formData.append("files", file, file.name));
-        const response = await fetch("/api/analyze", { method: "POST", body: formData });
+        const personalKey = personalApiKey.trim();
+        const response = await fetch("/api/analyze", {
+          method: "POST",
+          body: formData,
+          headers: personalKey ? {
+            "x-mosaic-ai-provider": aiProvider,
+            "x-mosaic-ai-key": personalKey,
+          } : undefined,
+        });
         const analysis = await readAnalysisStream(response, (nextProgress, message) => { setProgress(nextProgress); setProgressMessage(message); });
         const filesById = new Map(clientFileIds.map((id, index) => [id, files[index]]));
         setUploadedFiles(analysis.references.flatMap((reference) => { const file = filesById.get(reference.file.id); return file ? [{ id: reference.file.id, file }] : []; }));
@@ -309,6 +395,9 @@ export default function HomePage() {
     setProgress(0);
     setProgressMessage("");
     setNotice("");
+    setAiProvider("gemini");
+    setPersonalApiKey("");
+    setAiSettingsOpen(false);
   }
 
   function togglePin(reference: MosaicReference) {
@@ -386,6 +475,15 @@ export default function HomePage() {
 
       <section className="mosaic-workspace-grid">
         <aside className="mosaic-brief-column">
+          <AiProviderControls
+            provider={aiProvider}
+            apiKey={personalApiKey}
+            open={aiSettingsOpen}
+            onToggle={() => setAiSettingsOpen((current) => !current)}
+            onProviderChange={setAiProvider}
+            onApiKeyChange={setPersonalApiKey}
+            onClear={() => setPersonalApiKey("")}
+          />
           <form className="mosaic-panel mosaic-brief-panel" onSubmit={(event) => { event.preventDefault(); void handleAnalyze(); }}>
             <div className="mosaic-panel-heading"><div><p className="mosaic-eyebrow">START WITH A BRIEF</p><h2>Set the direction</h2></div><span className="mosaic-step-number">01</span></div>
             <label className="mosaic-field-label" htmlFor="brief">What are you making?</label>

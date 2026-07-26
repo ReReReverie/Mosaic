@@ -15,6 +15,7 @@ import { analyzeStyleDNA } from "./styleDNA";
 import { analyzeDiversity } from "./diversityAnalyzer";
 import { generatePalettes } from "./paletteEngine";
 import { checkAccessibility } from "./accessibilityChecker";
+import type { AiProviderConfig } from "./aiProvider";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Analysis Orchestrator
@@ -25,7 +26,7 @@ export interface OrchestratorInput {
   files: ReferenceFile[];
   brief: string;
   weights?: ScoringWeights;
-  apiKey?: string;
+  aiProvider?: AiProviderConfig;
   pinnedIds?: string[];
   removedIds?: string[];
   constraints?: CreativeConstraint[];
@@ -47,7 +48,7 @@ export async function* runAnalysis(
     files,
     brief,
     weights = DEFAULT_SCORING_WEIGHTS,
-    apiKey,
+    aiProvider,
     pinnedIds = [],
     removedIds = [],
     constraints = [],
@@ -64,7 +65,7 @@ export async function* runAnalysis(
     message: "Interpreting brief…",
   };
   const creativeDirection = {
-    ...(await interpretPrompt(brief, apiKey)),
+    ...(await interpretPrompt(brief, aiProvider)),
     constraints,
   };
 

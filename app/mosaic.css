@@ -196,6 +196,123 @@ body {
   padding: 20px;
 }
 
+.mosaic-ai-panel {
+  margin-bottom: 14px;
+  padding: 16px;
+  box-shadow: none;
+}
+
+.mosaic-ai-panel h2 {
+  font-size: 16px;
+}
+
+.mosaic-ai-state {
+  padding: 5px 6px;
+  border-radius: 5px;
+  font: 800 7px monospace;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.mosaic-ai-state.default {
+  background: #eff8d1;
+  color: #55722f;
+}
+
+.mosaic-ai-state.session {
+  background: #fff0df;
+  color: #a15e43;
+}
+
+.mosaic-ai-helper,
+.mosaic-ai-active {
+  margin: 11px 0 0;
+  color: var(--mosaic-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.mosaic-ai-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 13px;
+  padding: 9px 10px;
+  border: 1px solid var(--mosaic-line);
+  border-radius: 8px;
+  background: #f5f1e9;
+  color: var(--mosaic-ink);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.mosaic-ai-toggle span {
+  color: var(--mosaic-coral);
+  font-size: 16px;
+  line-height: 0.8;
+}
+
+.mosaic-ai-fields {
+  margin-top: 13px;
+  padding-top: 13px;
+  border-top: 1px solid var(--mosaic-line);
+}
+
+.mosaic-ai-fields .mosaic-field-label {
+  margin: 0 0 7px;
+}
+
+.mosaic-ai-fields select,
+.mosaic-ai-fields input {
+  width: 100%;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--mosaic-line);
+  border-radius: 8px;
+  background: #f5f1e9;
+  color: var(--mosaic-ink);
+  font-size: 10px;
+}
+
+.mosaic-ai-fields input {
+  margin-bottom: 4px;
+}
+
+.mosaic-ai-fields select:focus,
+.mosaic-ai-fields input:focus {
+  border-color: var(--mosaic-coral);
+  outline: 2px solid rgba(236, 119, 84, 0.2);
+  outline-offset: 2px;
+}
+
+.mosaic-ai-key-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mosaic-ai-key-footer small {
+  color: var(--mosaic-muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.mosaic-ai-key-footer button {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--mosaic-coral);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.mosaic-ai-active {
+  color: #8a634e;
+}
+
 .mosaic-panel-heading,
 .mosaic-input-heading,
 .mosaic-board-header,

@@ -8,6 +8,8 @@ import {
   FORMAT_TERMS,
   CONFLICTING_PAIRS,
 } from "./keywords";
+import type { AiProviderConfig } from "./aiProvider";
+import { generateStructuredText } from "./aiProvider";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Prompt Interpreter
@@ -74,7 +76,7 @@ export function interpretDeterministic(brief: string): CreativeDirection {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GPT-4o enhanced interpretation (optional — requires OPENAI_API_KEY)
+// Provider-backed interpretation is optional; Gemini is the hosted default.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `You are a creative direction analyst. Extract structured intent from a designer's brief.
@@ -99,40 +101,39 @@ Return ONLY a valid JSON object matching this schema exactly — no markdown, no
 - ambiguities: any conflicting or unclear signals in the brief as plain strings
 Use only values appropriate for the brief. Keep arrays concise (max 4 items each).`;
 
-async function interpretWithGPT(
-  brief: string,
-  apiKey: string
-): Promise<CreativeDirection | null> {
-  try {
-    const { default: OpenAI } = await import("openai");
-    const client = new OpenAI({ apiKey });
-
-    const response = await client.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: brief },
-      ],
-      temperature: 0,
-      max_tokens: 500,
-    });
-
-    const content = response.choices[0]?.message?.content ?? "";
-    const parsed = JSON.parse(content) as CreativeDirection;
-
-    // Validate required fields are present
-    const required: (keyof CreativeDirection)[] = [
-      "subject", "audience", "mood", "style", "colors", "formats",
-      "constraints", "ambiguities",
-    ];
-    for (const key of required) {
-      if (!Array.isArray(parsed[key])) throw new Error(`Missing field: ${key}`);
-    }
-
-    return parsed;
-  } catch {
-    return null; // Silently fall back to deterministic
+function stringList(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error("AI output is missing a valid " + field + " array.");
   }
+  return value.slice(0, 4) as string[];
+}
+
+function parseProviderDirection(content: string): CreativeDirection {
+  const trimmed = content.trim();
+  const fence = String.fromCharCode(96).repeat(3);
+  const normalized = trimmed.startsWith(fence)
+    ? trimmed.split(/\r?\n/).slice(1, -1).join("\n").trim()
+    : trimmed;
+  const parsed = JSON.parse(normalized) as Partial<CreativeDirection>;
+
+  return {
+    subject: stringList(parsed.subject, "subject"),
+    audience: stringList(parsed.audience, "audience"),
+    mood: stringList(parsed.mood, "mood"),
+    style: stringList(parsed.style, "style"),
+    colors: stringList(parsed.colors, "colors"),
+    formats: stringList(parsed.formats, "formats"),
+    constraints: [],
+    ambiguities: stringList(parsed.ambiguities, "ambiguities"),
+  };
+}
+
+async function interpretWithProvider(
+  brief: string,
+  provider: AiProviderConfig
+): Promise<CreativeDirection> {
+  const content = await generateStructuredText(provider, SYSTEM_PROMPT, brief);
+  return parseProviderDirection(content);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -145,11 +146,15 @@ async function interpretWithGPT(
  */
 export async function interpretPrompt(
   brief: string,
-  apiKey?: string
+  provider?: AiProviderConfig
 ): Promise<CreativeDirection> {
-  if (apiKey) {
-    const gptResult = await interpretWithGPT(brief, apiKey);
-    if (gptResult) return gptResult;
+  if (!provider) return interpretDeterministic(brief);
+
+  try {
+    return await interpretWithProvider(brief, provider);
+  } catch (error) {
+    if (provider.source === "session") throw error;
   }
+
   return interpretDeterministic(brief);
 }

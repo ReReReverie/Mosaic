@@ -52,9 +52,10 @@ On Windows PowerShell:
 Copy-Item .env.example .env.local
 ```
 
-Leave the copied file unchanged for the fastest demo. In particular, leave
-`OPENAI_API_KEY` and `DATABASE_URL` empty for now. Never commit `.env.local` or
-put secrets in variables prefixed with `NEXT_PUBLIC_`.
+Leave the copied file unchanged for the fastest demo. Add a server-side
+`GEMINI_API_KEY` only if you want AI-assisted brief interpretation. Never
+commit `.env.local`, expose secrets through `NEXT_PUBLIC_` variables, or put a
+personal API key in a deployment environment.
 
 ### 4. Start the website
 
@@ -79,19 +80,26 @@ npm run dev
 
 Then open [http://localhost:9000](http://localhost:9000).
 
-### API configuration (deferred)
+### API configuration
 
 No API configuration is needed to test the website locally. The deterministic
-analysis path is enabled by default, so leave both values empty:
+analysis path is enabled when no hosted key is configured:
 
 ```dotenv
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
 OPENAI_API_KEY=
 DATABASE_URL=
 ```
 
-The optional OpenAI enhancement and Neon persistence can be connected later.
-If you add either service in the future, restart `npm run dev` and keep all
-credentials server-side; never expose them through client-side code.
+For the hosted Vercel deployment, set `GEMINI_API_KEY` in Vercel's server-only
+environment variables. Gemini is the default provider. `OPENAI_API_KEY` is
+retained as a backwards-compatible fallback for existing deployments.
+
+The Mosaic UI also supports a session-only personal key for Google Gemini,
+OpenAI, or Anthropic. That key is sent over HTTPS in a request header, kept in
+browser memory only, and never written to Neon, localStorage, Vercel, URLs, or
+application responses. Clearing the key or starting a new session removes it.
 
 ### Neon persistence (deferred)
 
@@ -112,10 +120,11 @@ If `DATABASE_URL` is omitted, the app still runs using browser-local state.
 
 The shared Vercel demo can use a project-provided free-tier API configuration
 for hackathon testing. Because that configuration is shared, response speed
-and usage limits may vary. For a faster and less constrained experience, users
-can deploy their own Vercel instance and set their own `OPENAI_API_KEY` as a
-server-only environment variable. The local installation does not require this
-key.
+and usage limits may vary. Set `GEMINI_API_KEY` as a server-only Vercel
+environment variable to enable the default Gemini provider. Users can also
+enter their own supported provider key from the AI Provider panel; that
+session override is never persisted by the application. The local
+installation does not require any API key.
 
 ### Vercel deployment (deferred)
 
@@ -190,7 +199,10 @@ Then open [http://localhost:9000](http://localhost:9000).
 
 ## AI Enhancement
 
-When `OPENAI_API_KEY` is set, GPT-4o improves prompt parsing and explanation quality. The app is fully functional without an API key using deterministic fallbacks.
+When `GEMINI_API_KEY` is set, Gemini improves prompt parsing and explanation
+quality. OpenAI and Anthropic are also supported for session-only personal
+overrides. The app remains fully functional without a key using deterministic
+fallbacks.
 
 ## Notes on PDF Thumbnails
 
