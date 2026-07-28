@@ -15,47 +15,17 @@ import { DiversityPanel } from "@/components/DiversityPanel";
 import { PalettePanel } from "@/components/PalettePanel";
 import { AccessibilityPanel } from "@/components/AccessibilityPanel";
 import { SkippedFilesPanel } from "@/components/SkippedFilesPanel";
+import { PromptAnalysisPanel } from "@/components/PromptAnalysisPanel";
+import { ReferenceSynthesisPanel } from "@/components/ReferenceSynthesisPanel";
 
 const TOP_N = 12;
 
 export default function BoardPage() {
   const router = useRouter();
   const {
-    result, brief, sessionId, pinnedIds, removedIds,
-    uploadedFiles,
-    setResult, pinReference, unpinReference, removeReference, markTooSimilar, resetReview,
+    result, brief, pinnedIds, removedIds,
+    pinReference, unpinReference, removeReference, markTooSimilar, resetReview,
   } = useBoardStore();
-  const [isExporting, setIsExporting] = React.useState(false);
-  const [isHydrating, setIsHydrating] = React.useState(() => !result);
-
-  React.useEffect(() => {
-    if (result || !sessionId) return;
-
-    let active = true;
-
-    fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
-      headers: { Accept: "application/json" },
-    })
-      .then(async (response) => {
-        const payload = (await response.json().catch(() => null)) as {
-          result?: typeof result;
-        } | null;
-        if (!response.ok || !payload?.result) {
-          throw new Error(payload?.result ? "Unable to load saved session." : "Session not found.");
-        }
-        if (active) setResult(payload.result);
-      })
-      .catch(() => {
-        // A missing or expired session falls through to the empty-state UI.
-      })
-      .finally(() => {
-        if (active) setIsHydrating(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [result, sessionId, setResult]);
 
   if (!result) {
     return (
@@ -64,9 +34,9 @@ export default function BoardPage() {
         style={{ background: "var(--surface-1)" }}
       >
         <div className="text-center">
-          <p className="t-headline mb-2">{isHydrating ? "Loading saved board…" : "No analysis yet"}</p>
+          <p className="t-headline mb-2">No analysis yet</p>
           <p className="t-body mb-6">
-            {isHydrating ? "Restoring the latest session from Neon." : "Start from a brief and a reference folder."}
+            Start from a brief and a reference folder.
           </p>
           <Button
             onClick={() => router.push("/")}
@@ -81,53 +51,11 @@ export default function BoardPage() {
 
   const {
     references, creativeDirection, styleDNA,
-    diversitySuggestions, palette, accessibilityFindings, skippedFiles,
+    promptAnalysis, referenceSynthesis, diversitySuggestions, palette, accessibilityFindings, skippedFiles,
   } = result;
 
   const visible = references.filter((r) => !r.isRemoved).slice(0, TOP_N);
   const errorCount = accessibilityFindings.filter((f) => f.severity === "error").length;
-
-  async function handleExport() {
-    if (!result) return;
-    const selectedIds = visible.map((r) => r.file.id);
-    const sourceFiles = uploadedFiles.filter((uploaded) =>
-      selectedIds.includes(uploaded.id)
-    );
-    setIsExporting(true);
-    try {
-      const formData = new FormData();
-      formData.append("result", JSON.stringify(result));
-      formData.append("selectedIds", JSON.stringify(selectedIds));
-      formData.append("paletteSetId", "extracted");
-      formData.append(
-        "fileIds",
-        JSON.stringify(sourceFiles.map((uploaded) => uploaded.id))
-      );
-      for (const uploaded of sourceFiles) {
-        formData.append("files", uploaded.file, uploaded.file.name);
-      }
-
-      const res = await fetch("/api/export", {
-        method: "POST",
-        body: formData,
-      });
-      if (!res.ok) {
-        const payload = await res.json().catch(() => null) as { error?: string } | null;
-        throw new Error(payload?.error ?? "Export failed.");
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "creative-reference-package.zip";
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "Export failed. Please try again.");
-    } finally {
-      setIsExporting(false);
-    }
-  }
 
   return (
     <div
@@ -214,15 +142,6 @@ export default function BoardPage() {
             <TooltipContent side="bottom">Clear all pins and removals</TooltipContent>
           </Tooltip>
 
-          <Button
-            size="sm"
-            onClick={handleExport}
-            disabled={isExporting}
-            className="text-xs font-semibold"
-            style={{ background: "var(--lime)", color: "#0c0c0f" }}
-          >
-            Export ZIP ↓
-          </Button>
         </div>
       </header>
 
@@ -239,7 +158,9 @@ export default function BoardPage() {
           }}
         >
           <div className="flex flex-col gap-1 p-3">
+            <PromptAnalysisPanel analysis={promptAnalysis} />
             <CreativeDirectionPanel direction={creativeDirection} />
+            <ReferenceSynthesisPanel synthesis={referenceSynthesis} />
             <StyleDNAPanel dna={styleDNA} />
             <DiversityPanel
               suggestions={diversitySuggestions}

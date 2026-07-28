@@ -40,9 +40,7 @@ export function consumeRateLimit(key: string): {
 }
 
 export function getRequestKey(headers: Headers): string {
-  const forwarded = (
-    headers.get("x-vercel-forwarded-for") || headers.get("x-forwarded-for")
-  )
+  const forwarded = headers.get("x-forwarded-for")
     ?.split(",")[0]
     ?.trim();
   return forwarded || headers.get("x-real-ip") || "anonymous";

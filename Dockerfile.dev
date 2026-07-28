@@ -1,0 +1,24 @@
+FROM node:20-bookworm-slim
+
+ENV NEXT_TELEMETRY_DISABLED=1
+
+WORKDIR /workspace
+
+# Keep native image/PDF tooling inside the container instead of installing it
+# on the host operating system.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends graphicsmagick imagemagick \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+RUN mkdir -p .next \
+  && chown -R node:node /workspace
+
+USER node
+
+EXPOSE 9000
+
+CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]

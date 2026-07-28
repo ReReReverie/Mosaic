@@ -1,6 +1,7 @@
 import { extractModelText } from "./structuredJson";
+import { REPLICATE_DEFAULT_MODEL } from "./replicateProvider";
 
-export const AI_PROVIDERS = ["gemini", "openai", "anthropic", "groq", "ollama"] as const;
+export const AI_PROVIDERS = ["gemini", "openai", "anthropic", "groq", "ollama", "replicate"] as const;
 
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 export type AiProviderSource = "default" | "session";
@@ -29,6 +30,7 @@ export const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
   anthropic: "Anthropic Claude",
   groq: "Groq",
   ollama: "Ollama (local)",
+  replicate: "Replicate (MiniCPM-V)",
 };
 
 const DEFAULT_MODELS: Record<AiProvider, string> = {
@@ -36,7 +38,8 @@ const DEFAULT_MODELS: Record<AiProvider, string> = {
   openai: "gpt-4o",
   anthropic: "claude-3-5-haiku-latest",
   groq: "qwen/qwen3.6-27b",
-  ollama: "llama3.2",
+  ollama: "llama3.2-vision",
+  replicate: REPLICATE_DEFAULT_MODEL,
 };
 const GROQ_STRUCTURED_MODEL = "qwen/qwen3.6-27b";
 
@@ -66,7 +69,9 @@ function modelFor(provider: AiProvider, source: AiProviderSource): string {
             ? process.env.ANTHROPIC_MODEL
             : provider === "groq"
               ? process.env.GROQ_MODEL
-              : process.env.OLLAMA_MODEL
+              : provider === "ollama"
+                ? process.env.OLLAMA_MODEL
+                : process.env.REPLICATE_MODEL
     );
     if (environmentModel) return environmentModel;
   }
@@ -109,6 +114,7 @@ export function resolveAiProvider(override?: {
     ["openai", readSecret(process.env.OPENAI_API_KEY)],
     ["anthropic", readSecret(process.env.ANTHROPIC_API_KEY)],
     ["groq", readSecret(process.env.GROQ_API_KEY)],
+    ["replicate", readSecret(process.env.REPLICATE_API_TOKEN)],
     // Ollama is always available locally — use it as final fallback when enabled
     ["ollama", readSecret(process.env.OLLAMA_ENABLED) ? "ollama" : undefined],
   ];
@@ -294,6 +300,9 @@ export async function generateStructuredText(
   if (config.provider === "openai") return generateWithOpenAI(config, systemPrompt, userPrompt);
   if (config.provider === "anthropic") return generateWithAnthropic(config, systemPrompt, userPrompt);
   if (config.provider === "groq") return generateWithOpenAiCompat("groq", "https://api.groq.com/openai", config, systemPrompt, userPrompt);
+  if (config.provider === "replicate") {
+    throw new Error("Replicate is configured for image analysis only; text-only generation is not supported.");
+  }
   // ollama
   const ollamaBase = readSecret(process.env.OLLAMA_BASE_URL) ?? "http://localhost:11434";
   return generateWithOpenAiCompat("ollama", ollamaBase, config, systemPrompt, userPrompt);

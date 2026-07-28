@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { expandMoodTerms, interpretDeterministic, normalizeProviderDirection, parseProviderDirection } from "./promptInterpreter";
+import { expandMoodTerms, interpretDeterministic, interpretPrompt, normalizeProviderDirection, parseProviderDirection, parseProviderInterpretation } from "./promptInterpreter";
+import { DEFAULT_PROMPT_PROFILE, interpretPromptAnalysisDeterministic, normalizeProviderPromptAnalysis } from "./promptAnalysis";
 
 describe("interpretDeterministic", () => {
   it("extracts subject from brief", () => {
@@ -147,6 +148,96 @@ describe("interpretDeterministic", () => {
       '<think>Map the brief to visual signals.</think>\n{"subject":["food"],"mood":["dramatic"],"style":["editorial"],"audience":[],"colors":[],"formats":[],"ambiguities":[]}',
       "A dramatic editorial food image"
     );
+    expect(result.subject).toContain("food");
+    expect(result.mood).toContain("dramatic");
+  });
+});
+
+describe("default-first prompt analysis", () => {
+  it("fills every artist dimension from the project profile for a sparse brief", () => {
+    const result = interpretPromptAnalysisDeterministic("A girl.");
+    const subject = result.dimensions.find((dimension) => dimension.dimension === "subject");
+    const defaults = result.dimensions.filter((dimension) => dimension.source === "default");
+
+    expect(subject).toMatchObject({ source: "prompt", specified: true, details: ["people"] });
+    expect(defaults.length).toBe(6);
+    expect(defaults.find((dimension) => dimension.dimension === "palette")?.details).toEqual(
+      DEFAULT_PROMPT_PROFILE.palette
+    );
+    expect(result.summary).toContain("Defaults applied");
+  });
+
+  it("overrides only dimensions matched by the brief", () => {
+    const result = interpretPromptAnalysisDeterministic(
+      "A standing portrait at night in blue, centered, painted on wood."
+    );
+    const byDimension = new Map(result.dimensions.map((dimension) => [dimension.dimension, dimension]));
+
+    expect(byDimension.get("subject")?.source).toBe("prompt");
+    expect(byDimension.get("poseGesture")?.source).toBe("prompt");
+    expect(byDimension.get("lightingMood")?.details).toEqual(expect.arrayContaining(["lighting: night lighting"]));
+    expect(byDimension.get("palette")?.details).toContain("cool");
+    expect(byDimension.get("materialTexture")?.details).toContain("wood");
+    expect(byDimension.get("composition")?.details).toContain("centered");
+    expect(byDimension.get("styleRendering")?.details).toContain("illustrative");
+  });
+
+  it("retains conflicting signals and reports them as prompt ambiguities", () => {
+    const result = interpretPromptAnalysisDeterministic("A warm but cool, bright and moody portrait.");
+    const palette = result.dimensions.find((dimension) => dimension.dimension === "palette");
+
+    expect(palette?.details).toEqual(expect.arrayContaining(["warm", "cool"]));
+    expect(result.summary).toMatch(/ambiguities/i);
+    expect(result.summary).toMatch(/conflicting signals/i);
+  });
+
+  it("keeps deterministic matches when provider output is incomplete", () => {
+    const result = normalizeProviderPromptAnalysis({
+      dimensions: {
+        lightingMood: ["cinematic night"],
+      },
+    }, "A warm food poster at night");
+
+    expect(result.dimensions.find((dimension) => dimension.dimension === "palette")).toMatchObject({
+      source: "prompt",
+      details: ["warm"],
+    });
+    expect(result.dimensions.find((dimension) => dimension.dimension === "lightingMood")).toMatchObject({ source: "prompt" });
+    expect(result.dimensions.find((dimension) => dimension.dimension === "lightingMood")?.details).toEqual(
+      expect.arrayContaining(["lighting: night lighting", "cinematic night"])
+    );
+  });
+
+  it("parses provider dimensions without changing the legacy direction contract", () => {
+    const result = parseProviderInterpretation(
+      JSON.stringify({
+        subject: ["food"],
+        audience: [],
+        mood: ["warm"],
+        style: ["editorial"],
+        colors: ["warm"],
+        formats: ["poster"],
+        constraints: [],
+        ambiguities: [],
+        dimensions: { palette: ["warm"], styleRendering: ["editorial"] },
+      }),
+      "A warm editorial food poster"
+    );
+
+    expect(result.creativeDirection.subject).toContain("food");
+    expect(result.promptAnalysis.dimensions.find((dimension) => dimension.dimension === "palette")).toMatchObject({ source: "prompt" });
+  });
+});
+
+describe("interpretPrompt", () => {
+  it("uses local brief parsing for Replicate's vision-only model", async () => {
+    const result = await interpretPrompt("A dramatic editorial food poster", {
+      provider: "replicate",
+      apiKey: "r8_test_token_1234567890",
+      model: "sai88uk/minicpm-v-45-v9:version",
+      source: "session",
+    });
+
     expect(result.subject).toContain("food");
     expect(result.mood).toContain("dramatic");
   });

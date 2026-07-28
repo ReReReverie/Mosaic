@@ -67,11 +67,17 @@ export interface ReferenceFeatures {
   semanticDescription?: string;
   /** AI's explanation of how the visible evidence supports the brief. */
   semanticRationale?: string;
+  /** AI's evidence-based description of the viewpoint or compositional angle. */
+  semanticAngle?: string;
+  /** AI's practical suggestion for using the reference in poster or artwork. */
+  semanticPosterUse?: string;
   /** Short, visible observations used by the AI to reach its match judgment. */
   semanticEvidence?: string[];
   semanticTags?: string[];
   semanticMatch?: number;
   semanticConfidence?: number;
+  /** Optional per-dimension judgments returned by a multimodal provider. */
+  semanticDimensionEvaluations?: DimensionAssessment[];
   analysisSource?: "deterministic" | "vision" | "ai-text" | "mixed";
 }
 
@@ -119,6 +125,97 @@ export interface CreativeDirection {
   ambiguities: string[];
 }
 
+// ── Artist-oriented prompt analysis ─────────────────────────────────────────
+
+export type AnalyzerDimension =
+  | "subject"
+  | "poseGesture"
+  | "lightingMood"
+  | "palette"
+  | "materialTexture"
+  | "composition"
+  | "styleRendering"
+  | "other";
+
+export const ANALYZER_DIMENSIONS: readonly AnalyzerDimension[] = [
+  "subject",
+  "poseGesture",
+  "lightingMood",
+  "palette",
+  "materialTexture",
+  "composition",
+  "styleRendering",
+];
+
+export const ANALYZER_DIMENSION_LABELS: Record<AnalyzerDimension, string> = {
+  subject: "Subject",
+  poseGesture: "Pose / gesture",
+  lightingMood: "Lighting & mood",
+  palette: "Palette",
+  materialTexture: "Material / texture",
+  composition: "Composition / framing",
+  styleRendering: "Style / rendering",
+  other: "Other",
+};
+
+export type PromptValueSource = "default" | "prompt";
+
+export interface PromptDimension {
+  dimension: AnalyzerDimension;
+  details: string[];
+  /** True only when the user's brief matched or strongly implied this dimension. */
+  specified: boolean;
+  source: PromptValueSource;
+}
+
+export interface PromptAnalysis {
+  summary: string;
+  dimensions: PromptDimension[];
+}
+
+/** Provider-facing assessment without the prompt/default provenance. */
+export interface DimensionAssessment {
+  dimension: AnalyzerDimension;
+  applicable: boolean;
+  score: number | null;
+  reason: string;
+}
+
+export interface DimensionEvaluation extends DimensionAssessment {
+  source: PromptValueSource;
+}
+
+export interface ReferenceEvaluation {
+  overallMatchScore: number;
+  dimensions: DimensionEvaluation[];
+  strongFor: string[];
+  weakFor: string[];
+}
+
+export interface CombinationSuggestion {
+  dimension: AnalyzerDimension;
+  referenceIds: string[];
+  reason: string;
+}
+
+export interface CoverageGap {
+  dimension: AnalyzerDimension;
+  reason: string;
+}
+
+export interface ReferenceConflict {
+  referenceIds: string[];
+  dimensions: AnalyzerDimension[];
+  reason: string;
+}
+
+export interface ReferenceSynthesis {
+  summary: string;
+  suggestedCombination: CombinationSuggestion[];
+  coverageGaps: CoverageGap[];
+  conflicts: ReferenceConflict[];
+}
+
 // ── Scoring ───────────────────────────────────────────────────────────────────
 
 export interface ScoringWeights {
@@ -160,6 +257,8 @@ export interface RankedReference {
   matchBasis?: Array<"semantic" | "visual" | "metadata">;
   /** Confidence in the evidence basis, separate from the fit score. */
   matchConfidence?: number;
+  /** Artist-oriented 1–10 evaluation; absent only on legacy persisted results. */
+  referenceEvaluation?: ReferenceEvaluation;
   isPinned: boolean;
   isRemoved: boolean;
   isTooSimilar: boolean;
@@ -244,8 +343,10 @@ export interface AnalysisResult {
   sessionId: string;
   brief: string;
   creativeDirection: CreativeDirection;
+  promptAnalysis: PromptAnalysis;
   /** Full sorted list — top-12 cutoff applied by the UI */
   references: RankedReference[];
+  referenceSynthesis: ReferenceSynthesis;
   styleDNA: StyleDNA;
   diversitySuggestions: DiversitySuggestion[];
   palette: PaletteSet;
@@ -258,7 +359,7 @@ export interface AnalysisResult {
 
 export interface AiAnalysisSummary {
   enabled: boolean;
-  provider?: "gemini" | "openai" | "anthropic" | "groq" | "ollama";
+  provider?: "gemini" | "openai" | "anthropic" | "groq" | "ollama" | "replicate";
   requested: number;
   visionCompleted: number;
   textFallback: number;
@@ -280,25 +381,16 @@ export interface BoardState {
   tooSimilarIds: string[];
 }
 
-// ── Export ────────────────────────────────────────────────────────────────────
-
-export interface ExportManifest {
-  sessionId: string;
-  brief: string;
-  exportedAt: number;
-  selectedReferenceIds: string[];
-  /** "extracted" | "harmonized" | "contrastAware" */
-  paletteSetId: keyof PaletteSet;
-  version: string;
-}
-
 // ── Progress Events (streaming API) ──────────────────────────────────────────
 
 export type ProgressEventType =
+  | "prompt-analysis-complete"
   | "scan-complete"
   | "file-analysis-progress"
   | "file-skipped"
   | "ranking-complete"
+  | "reference-evaluation-complete"
+  | "synthesis-complete"
   | "style-dna-complete"
   | "diversity-complete"
   | "palette-complete"
@@ -311,6 +403,8 @@ export interface ProgressEvent {
   /** 0–100 */
   progress: number;
   message: string;
+  promptAnalysis?: PromptAnalysis;
+  referenceSynthesis?: ReferenceSynthesis;
   /** Ranked references available before the final analysis completes. */
   partialReferences?: RankedReference[];
   /** Present only when type === "done" */

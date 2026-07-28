@@ -6,6 +6,8 @@
 import React from "react";
 import type { AiAnalysisSummary, AnalysisResult, ProgressEvent, RankedReference } from "@/core/types";
 import type { AiProvider } from "@/core/aiProvider";
+import { PromptAnalysisPanel } from "@/components/PromptAnalysisPanel";
+import { ReferenceSynthesisPanel } from "@/components/ReferenceSynthesisPanel";
 import { useBoardStore } from "@/lib/store";
 
 type Source = "local" | "online";
@@ -23,6 +25,7 @@ interface MosaicAnalysis {
   tags: string[];
   colors: string[];
   aiRationale?: string;
+  posterUse?: string;
   aiEvidence?: string[];
 }
 
@@ -36,10 +39,11 @@ interface MosaicReference {
   creator?: string;
   license?: string;
   score: number;
+  overallMatchScore?: number;
+  referenceEvaluation?: RankedReference["referenceEvaluation"];
   matchBasis?: Array<"semantic" | "visual" | "metadata">;
   matchConfidence?: number;
   analysisSource?: "deterministic" | "vision" | "ai-text" | "mixed";
-  aiEnabled?: boolean;
   reasons: string[];
   analysis: MosaicAnalysis;
   isPinned: boolean;
@@ -62,6 +66,35 @@ function inferDirection(brief: string) {
   };
 }
 
+function deterministicAngle(features: RankedReference["features"]): string {
+  const format = features.orientation === "portrait" ? "portrait" : features.orientation === "landscape" ? "landscape" : "square";
+  const placement = features.subjectPlacement === "center"
+    ? "centered focal framing"
+    : features.subjectPlacement === "distributed"
+      ? "distributed visual movement"
+      : `focal area held ${features.subjectPlacement} in frame`;
+  return `${format} framing with ${placement}; the compositional effect is ${features.subjectPlacement === "center" ? "direct and stable" : "asymmetric and directional"}.`;
+}
+
+function deterministicPosterUse(features: RankedReference["features"]): string {
+  if (features.subjectPlacement === "left") {
+    return "Keep the left-side focal area intact and test the open right side for a headline, caption, or callout; crop carefully to preserve the visual pull across the poster.";
+  }
+  if (features.subjectPlacement === "right") {
+    return "Keep the right-side focal area intact and test the open left side for a headline, caption, or callout; crop carefully to preserve the visual pull across the poster.";
+  }
+  if (features.subjectPlacement === "top") {
+    return "Use the upper focal area as the visual hook and test the lower portion for supporting type, credits, or a color block without covering the subject.";
+  }
+  if (features.subjectPlacement === "bottom") {
+    return "Use the lower focal area to create upward visual tension and test the upper portion for a headline or breathing room, checking the image before placing type.";
+  }
+  if (features.subjectPlacement === "distributed") {
+    return "Use the distributed composition as a full-bleed atmosphere or texture field, then place type over the quietest region and crop only after protecting the visual rhythm.";
+  }
+  return "Use the centered framing for a direct poster hierarchy, with the focal subject as the entry point and a deliberate margin, band, or overlay for supporting type.";
+}
+
 async function deriveClientFileId(file: File): Promise<string> {
   const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
   const raw = `${relativePath}::${file.size}::${file.lastModified}`;
@@ -69,7 +102,7 @@ async function deriveClientFileId(file: File): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 32);
 }
 
-function toMosaicReference(reference: RankedReference, aiEnabled = false): MosaicReference {
+function toMosaicReference(reference: RankedReference): MosaicReference {
   const { file, features } = reference;
   const isBright = features.brightness >= 0.6;
   const isIllustrative = features.isIllustrative;
@@ -95,22 +128,24 @@ function toMosaicReference(reference: RankedReference, aiEnabled = false): Mosai
     previewUrl: file.mimeType.startsWith("image/") ? `/api/thumbnail/${encodeURIComponent(file.id)}` : "",
     provider: "Attached library",
     score: Math.round(reference.score * 100),
+    overallMatchScore: reference.referenceEvaluation?.overallMatchScore,
+    referenceEvaluation: reference.referenceEvaluation,
     matchBasis: reference.matchBasis,
     matchConfidence: reference.matchConfidence,
     analysisSource: features.analysisSource ?? "deterministic",
-    aiEnabled,
     reasons: reference.reasons,
     isPinned: reference.isPinned,
     isRemoved: reference.isRemoved,
     isTooSimilar: reference.isTooSimilar,
     analysis: {
-      angle: isBright ? "Open, ambient light" : "Directional or low-key light",
+      angle: features.semanticAngle || deterministicAngle(features),
       placement: `Subject ${features.subjectPlacement}`,
       crop: cropLabel,
       lighting: isBright ? "High-key, bright exposure" : "Low-key tonal range",
       perspective: isIllustrative ? "Illustrative language" : "Photographic depth",
       focal: features.semanticDescription || extractedSubject,
       aiRationale: features.semanticRationale,
+      posterUse: features.semanticPosterUse || deterministicPosterUse(features),
       aiEvidence: features.semanticEvidence,
       negativeSpace: features.contrast < 0.35 ? "Quiet and generous" : "Active and layered",
       texture: `${saturationLabel}, ${contrastLabel}`,
@@ -134,7 +169,7 @@ function parseOnlineReferences(value: unknown): MosaicReference[] {
 
 async function readAnalysisStream(
   response: Response,
-  onProgress: (progress: number, message: string, partialReferences?: RankedReference[]) => void
+  onProgress: (event: ProgressEvent) => void
 ): Promise<AnalysisResult> {
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -149,7 +184,7 @@ async function readAnalysisStream(
     if (!line.trim()) return;
     let event: ProgressEvent;
     try { event = JSON.parse(line) as ProgressEvent; } catch { return; }
-    onProgress(event.progress, event.message, event.partialReferences);
+    onProgress(event);
     if (event.type === "error") throw new Error(event.error ?? "Analysis failed.");
     if (event.type === "done" && event.result) completed = event.result;
   };
@@ -170,70 +205,29 @@ async function readAnalysisStream(
   return completed;
 }
 
-function escapeHtml(value: string): string {
-  const entities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
-  return value.replace(/[&<>"']/g, (character) => entities[character]);
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-function posterboardHtml(brief: string, references: MosaicReference[]): string {
-  const cards = references.map((reference) => `
-    <article class="card">
-      ${reference.previewUrl ? `<img src="${escapeHtml(reference.previewUrl)}" alt="${escapeHtml(reference.title)}">` : ""}
-      <p class="kicker">${escapeHtml(reference.source.toUpperCase())} · ${reference.score}% FIT</p>
-      <h2>${escapeHtml(reference.title)}</h2>
-      <p>${escapeHtml(reference.reasons.slice(0, 2).join(" · "))}</p>
-    </article>`).join("");
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Creative Reference Board</title><style>body{font-family:Arial,sans-serif;padding:32px;background:#f4f0e8;color:#1d2636}main{max-width:1100px;margin:auto}h1{font-size:38px;letter-spacing:-.05em}.brief{color:#69716e}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.card{background:#fbfaf6;border:1px solid #d9d4c8;border-radius:14px;padding:14px}.card img{width:100%;height:210px;object-fit:cover;border-radius:9px}.kicker{font-size:10px;letter-spacing:.1em;color:#ec7754;font-weight:700}h2{font-size:17px}</style></head><body><main><p class="kicker">MOSAIC / CREATIVE REFERENCE LAB</p><h1>Reference board</h1><p class="brief">${escapeHtml(brief)}</p><section class="grid">${cards}</section></main></body></html>`;
-}
-
-function MosaicReferenceCard({ reference, expanded, onPin, onRemove, onSimilar, onExpand }: {
+function MosaicReferenceCard({ reference, onPin, onRemove, onSimilar }: {
   reference: MosaicReference;
-  expanded: boolean;
   onPin: () => void;
   onRemove: () => void;
   onSimilar: () => void;
-  onExpand: () => void;
 }) {
   const [imageFailed, setImageFailed] = React.useState(false);
-  const referenceCardRef = React.useRef<HTMLElement>(null);
   const imageVisible = Boolean(reference.previewUrl) && !imageFailed;
 
-  React.useEffect(() => {
-    if (!expanded) return;
-    const drawer = referenceCardRef.current?.querySelector<HTMLElement>(".mosaic-analysis-drawer");
-    if (drawer && typeof drawer.scrollIntoView === "function") {
-      drawer.id = `analysis-${reference.id}`;
-      drawer.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-  }, [expanded, reference.id]);
-
   return (
-    <article ref={referenceCardRef} className="mosaic-reference-card">
+    <article className="mosaic-reference-card">
       <div className="mosaic-reference-image">
         {imageVisible ? <img src={reference.previewUrl} alt={reference.title} loading="lazy" onError={() => setImageFailed(true)} /> : <div className="mosaic-file-placeholder" aria-label={`${reference.title} preview unavailable`}><span>{reference.source === "online" ? "◎" : "＋"}</span><small>{reference.title.split(".").pop()?.toUpperCase() || "FILE"}</small></div>}
         <div className="mosaic-source-label"><span className={reference.source === "online" ? "online" : "local"}>{reference.source.toUpperCase()}</span>{reference.source === "online" && reference.license && <span className="license">{reference.license}</span>}</div>
-        <div className="mosaic-score-badge">{reference.score}<small>% FIT · {reference.analysisSource === "vision" ? "AI VISION" : reference.analysisSource === "ai-text" || reference.analysisSource === "mixed" ? "AI TEXT" : reference.aiEnabled ? "AI FALLBACK" : reference.matchBasis?.includes("semantic") ? "SEMANTIC" : reference.source === "online" ? "CURATED" : "VISUAL"}</small></div>
+        <div className="mosaic-score-badge">{reference.overallMatchScore ? `${reference.overallMatchScore}/10` : reference.score}<small>{reference.overallMatchScore ? ` ARTIST MATCH · ${reference.score}% FIT` : `% FIT`} · {reference.analysisSource === "vision" ? "AI VISION" : reference.analysisSource === "ai-text" || reference.analysisSource === "mixed" ? "AI TEXT" : reference.matchBasis?.includes("semantic") ? "SEMANTIC" : reference.source === "online" ? "CURATED" : "VISUAL"}</small></div>
       </div>
       <div className="mosaic-reference-body">
         <div className="mosaic-reference-topline"><div><p className="mosaic-reference-kicker">{reference.provider || "ATTACHED LIBRARY"}</p><h3 title={reference.title}>{reference.title}</h3></div><button type="button" className={`mosaic-pin-button ${reference.isPinned ? "pinned" : ""}`} onClick={onPin} aria-label={reference.isPinned ? "Unpin reference" : "Pin reference"}>{reference.isPinned ? "●" : "○"}</button></div>
         <p className="mosaic-analysis-summary"><strong>{reference.analysis.angle}</strong> · {reference.analysis.placement.toLowerCase()} · {reference.analysis.lighting.toLowerCase()}</p>
         <div className="mosaic-card-tags">{reference.analysis.tags.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}</div>
         <div className="mosaic-reason-list">{reference.reasons.slice(0, 2).map((reason) => <span key={reason}>+ {reason}</span>)}</div>
-        <div className="mosaic-reference-actions"><button type="button" aria-expanded={expanded} aria-controls={`analysis-${reference.id}`} onClick={onExpand}>{expanded ? "Hide analysis" : "View analysis"} <span>↘</span></button>{reference.sourceUrl && <a href={reference.sourceUrl} target="_blank" rel="noreferrer">Open source ↗</a>}<button type="button" className="remove-action" onClick={onRemove}>Remove</button></div>
+        <div className="mosaic-reference-actions">{reference.sourceUrl && <a href={reference.sourceUrl} target="_blank" rel="noreferrer">Open source ↗</a>}<button type="button" className="remove-action" onClick={onRemove}>Remove</button></div>
         <div className="mosaic-card-controls"><button type="button" onClick={onPin}>{reference.isPinned ? "Unpin" : "Pin"}</button><button type="button" onClick={onSimilar}>{reference.isTooSimilar ? "Similar" : "Flag similar"}</button></div>
-        {expanded && <p className="mosaic-analysis-evidence">{reference.matchBasis?.join(" + ").toUpperCase() || "VISUAL"} EVIDENCE{reference.matchConfidence ? ` · ${Math.round(reference.matchConfidence * 100)}% CONFIDENCE` : ""}</p>}
-        {expanded && <div className="mosaic-analysis-drawer"><div className="mosaic-analysis-heading"><span>{reference.analysisSource && reference.analysisSource !== "deterministic" ? "AI ANALYSIS" : "OBSERVABLE SIGNALS"}</span><small>{reference.analysisSource && reference.analysisSource !== "deterministic" ? "Reference-specific semantic read" : "Derived from preview and metadata"}</small></div>{reference.analysisSource && reference.analysisSource !== "deterministic" && <div className="mosaic-ai-read"><p><strong>What it sees:</strong> {reference.analysis.focal}</p>{reference.analysis.aiRationale && <p><strong>Why it fits:</strong> {reference.analysis.aiRationale}</p>}{reference.analysis.aiEvidence && reference.analysis.aiEvidence.length > 0 && <p><strong>Evidence:</strong> {reference.analysis.aiEvidence.join(" · ")}</p>}</div>}<div className="mosaic-analysis-grid">{[["Angle", reference.analysis.angle], ["Placement", reference.analysis.placement], ["Crop", reference.analysis.crop], ["Perspective", reference.analysis.perspective], ["Focal point", reference.analysis.focal], ["Negative space", reference.analysis.negativeSpace], ["Lighting", reference.analysis.lighting], ["Texture", reference.analysis.texture]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><div className="mosaic-detail-row"><span>DOMINANT COLORS</span><div className="mosaic-tiny-swatches">{reference.analysis.colors.map((color, index) => <i key={`${reference.id}-${color}-${index}`} title={color} style={{ background: color }} />)}</div></div>{reference.source === "online" && <div className="mosaic-attribution"><span>ATTRIBUTION</span><strong>{reference.creator || "Creator not supplied"} · {reference.license || "License unavailable"}</strong></div>}</div>}
       </div>
     </article>
   );
@@ -249,6 +243,7 @@ const AI_PROVIDER_OPTIONS: Array<{ value: AiProvider; label: string }> = [
   { value: "anthropic", label: "Anthropic Claude" },
   { value: "groq", label: "Groq" },
   { value: "ollama", label: "Ollama (local)" },
+  { value: "replicate", label: "Replicate (MiniCPM-V)" },
 ];
 
 function AiProviderControls({
@@ -271,7 +266,7 @@ function AiProviderControls({
   analysis?: AiAnalysisSummary;
 }) {
   const hasPersonalKey = apiKey.trim().length > 0;
-  const completed = (analysis?.visionCompleted ?? 0) + (analysis?.textFallback ?? 0);
+  const completed = (analysis?.visionCompleted ?? 0) + (analysis?.textFallback ?? 0) + (analysis?.failed ?? 0) + (analysis?.skipped ?? 0);
   return (
     <section className="mosaic-panel mosaic-ai-panel" aria-labelledby="ai-provider-heading">
       <div className="mosaic-panel-heading">
@@ -280,11 +275,11 @@ function AiProviderControls({
           <h2 id="ai-provider-heading">Use your own engine</h2>
         </div>
         <span className={`mosaic-ai-state ${hasPersonalKey ? "session" : "default"}`}>
-          {hasPersonalKey ? "SESSION" : "GEMINI DEFAULT"}
+          {hasPersonalKey ? "SESSION" : "HOSTED DEFAULT"}
         </span>
       </div>
       <p className="mosaic-ai-helper">
-        Gemini powers the hosted default. A personal key overrides it for this session only.
+        The hosted default is configured server-side. A personal key overrides it for this session only.
       </p>
       <button type="button" className="mosaic-ai-toggle" onClick={onToggle} aria-expanded={open}>
         {open ? "Hide provider settings" : "Use a personal API key"}
@@ -312,7 +307,7 @@ function AiProviderControls({
             aria-describedby="personal-ai-key-help"
           />
           <div className="mosaic-ai-key-footer">
-            <small id="personal-ai-key-help">Never stored in Neon, localStorage, or Vercel.</small>
+            <small id="personal-ai-key-help">Never stored in localStorage, sessionStorage, URLs, or application responses.</small>
             {hasPersonalKey && <button type="button" onClick={onClear}>Clear key</button>}
           </div>
         </div>
@@ -324,7 +319,7 @@ function AiProviderControls({
 }
 
 export default function HomePage() {
-  const { brief: storedBrief, result, constraints, scoringWeights, pinnedIds, removedIds, tooSimilarIds, uploadedFiles, setBrief, setConstraints, setResult, clearResult, setUploadedFiles, startNewSession, pinReference, unpinReference, removeReference, markTooSimilar } = useBoardStore();
+  const { brief: storedBrief, result, constraints, scoringWeights, pinnedIds, removedIds, tooSimilarIds, setBrief, setConstraints, setResult, clearResult, setUploadedFiles, startNewSession, pinReference, unpinReference, removeReference, markTooSimilar } = useBoardStore();
   const [briefInput, setBriefInput] = React.useState(storedBrief || DEFAULT_BRIEF);
   const [files, setFiles] = React.useState<File[]>([]);
   const [onlineReferences, setOnlineReferences] = React.useState<MosaicReference[]>([]);
@@ -334,11 +329,11 @@ export default function HomePage() {
   const [autoSearch, setAutoSearch] = React.useState(false);
   const [tab, setTab] = React.useState<"all" | Source>("all");
   const [page, setPage] = React.useState(0);
-  const [expandedId, setExpandedId] = React.useState<string | null>(null);
   const [status, setStatus] = React.useState<RunStatus>("idle");
   const [progress, setProgress] = React.useState(0);
   const [progressMessage, setProgressMessage] = React.useState("");
   const [streamingReferences, setStreamingReferences] = React.useState<RankedReference[]>([]);
+  const [streamingPromptAnalysis, setStreamingPromptAnalysis] = React.useState<AnalysisResult["promptAnalysis"] | null>(null);
   const [notice, setNotice] = React.useState("");
   const [aiProvider, setAiProvider] = React.useState<AiProvider>("gemini");
   const [personalApiKey, setPersonalApiKey] = React.useState("");
@@ -347,14 +342,15 @@ export default function HomePage() {
   const PAGE_SIZE = 6;
 
   const direction = React.useMemo(() => inferDirection(briefInput), [briefInput]);
-  const localReferences = React.useMemo(() => result?.references.map((reference) => toMosaicReference(reference, Boolean(result.aiAnalysis?.enabled))) ?? [], [result]);
+  const localReferences = React.useMemo(() => result?.references.map(toMosaicReference) ?? [], [result]);
   const streamingLocalReferences = React.useMemo(() => streamingReferences.map((reference) => toMosaicReference({
     ...reference,
     isPinned: pinnedIds.includes(reference.file.id),
     isRemoved: removedIds.includes(reference.file.id),
     isTooSimilar: tooSimilarIds.includes(reference.file.id),
-  }, false)), [streamingReferences, pinnedIds, removedIds, tooSimilarIds]);
+  })), [streamingReferences, pinnedIds, removedIds, tooSimilarIds]);
   const displayedLocalReferences = result ? localReferences : streamingLocalReferences;
+  const visiblePromptAnalysis = result?.promptAnalysis ?? streamingPromptAnalysis;
   const onlineWithState = React.useMemo(() => onlineReferences.map((reference) => ({ ...reference, isPinned: onlinePinned.includes(reference.id), isRemoved: onlineRemoved.includes(reference.id), isTooSimilar: onlineSimilar.includes(reference.id) })), [onlineReferences, onlinePinned, onlineRemoved, onlineSimilar]);
   const allReferences = [...displayedLocalReferences, ...onlineWithState];
   const visibleReferences = allReferences.filter((reference) => !reference.isRemoved);
@@ -367,6 +363,13 @@ export default function HomePage() {
   const selectedFormat = String(constraints.find((constraint) => constraint.type === "format")?.value ?? "any");
   const selectedOutput = String(constraints.find((constraint) => constraint.type === "output")?.value ?? "both");
   const canAnalyze = briefInput.trim().length >= 5 && (files.length > 0 || autoSearch) && status !== "scanning";
+  const analysisHint = status === "scanning"
+    ? ""
+    : briefInput.trim().length < 5
+      ? "Add at least 5 characters to the brief."
+      : files.length === 0 && !autoSearch
+        ? "Attach at least one reference file or turn AUTO ON."
+        : "";
 
   function handleFiles(list: FileList | null) {
     if (!list) return;
@@ -407,6 +410,7 @@ export default function HomePage() {
     setOnlineSimilar([]);
     setUploadedFiles([]);
     setStreamingReferences([]);
+    setStreamingPromptAnalysis(null);
     setStatus("scanning");
     setProgress(2);
     setProgressMessage("Preparing the reference library…");
@@ -440,18 +444,23 @@ export default function HomePage() {
             "x-mosaic-ai-key": personalKey,
           } : undefined,
         });
-        const analysis = await readAnalysisStream(response, (nextProgress, message, partialReferences) => {
-          setProgress(nextProgress);
-          setProgressMessage(message);
-          if (partialReferences) setStreamingReferences(partialReferences);
+        const analysis = await readAnalysisStream(response, (event) => {
+          setProgress(event.progress);
+          setProgressMessage(event.message);
+          if (event.partialReferences) setStreamingReferences(event.partialReferences);
+          if (event.promptAnalysis) setStreamingPromptAnalysis(event.promptAnalysis);
         });
         setUploadedFiles(analysis.references.flatMap((reference) => { const file = filesById.get(reference.file.id); return file ? [{ id: reference.file.id, file }] : []; }));
         setResult(analysis);
         setStreamingReferences([]);
-        if (analysis.aiAnalysis?.enabled && analysis.aiAnalysis.failed > 0) {
-          const completed = analysis.aiAnalysis.visionCompleted + analysis.aiAnalysis.textFallback;
-          const details = analysis.aiAnalysis.errors[0] ? ` ${analysis.aiAnalysis.errors[0]}` : "";
-          setNotice(`${analysis.aiAnalysis.provider?.toUpperCase() ?? "AI"} analyzed ${completed}/${analysis.aiAnalysis.requested} references; ${analysis.aiAnalysis.failed} used deterministic fallback.${details}`);
+        setStreamingPromptAnalysis(null);
+        if (analysis.aiAnalysis?.enabled && (analysis.aiAnalysis.failed > 0 || analysis.aiAnalysis.skipped > 0)) {
+          const fallbackCount = analysis.aiAnalysis.failed + analysis.aiAnalysis.skipped;
+          const providerLabel = analysis.aiAnalysis.provider?.toUpperCase() ?? "AI";
+          const referenceLabel = fallbackCount === 1 ? "reference" : "references";
+          setNotice(analysis.aiAnalysis.provider === "replicate"
+            ? `${providerLabel} visual enrichment failed for ${fallbackCount} ${referenceLabel}; deterministic analysis was retained.`
+            : `${providerLabel} enrichment was unavailable for ${fallbackCount} ${referenceLabel}; deterministic analysis was retained.`);
         }
       } else {
         setUploadedFiles([]);
@@ -478,9 +487,9 @@ export default function HomePage() {
     setOnlineRemoved([]);
     setOnlineSimilar([]);
     setStreamingReferences([]);
+    setStreamingPromptAnalysis(null);
     setTab("all");
     setPage(0);
-    setExpandedId(null);
     setStatus("idle");
     setProgress(0);
     setProgressMessage("");
@@ -513,30 +522,6 @@ export default function HomePage() {
       return;
     }
     setOnlineSimilar((current) => current.includes(reference.id) ? current.filter((id) => id !== reference.id) : [...current, reference.id]);
-  }
-
-  function handleExport() {
-    const localToExport = localReferences.filter((reference) => !reference.isRemoved).slice(0, 12);
-    if (result) {
-      const selectedIds = localToExport.map((reference) => reference.id);
-      const sourceFiles = uploadedFiles.filter((uploaded) => selectedIds.includes(uploaded.id));
-      const formData = new FormData();
-      formData.append("result", JSON.stringify(result));
-      formData.append("selectedIds", JSON.stringify(selectedIds));
-      formData.append("paletteSetId", "extracted");
-      formData.append("fileIds", JSON.stringify(sourceFiles.map((uploaded) => uploaded.id)));
-      sourceFiles.forEach((uploaded) => formData.append("files", uploaded.file, uploaded.file.name));
-      void fetch("/api/export", { method: "POST", body: formData }).then(async (response) => {
-        if (!response.ok) { const payload = (await response.json().catch(() => null)) as { error?: string } | null; throw new Error(payload?.error ?? "Export failed."); }
-        downloadBlob(await response.blob(), "creative-reference-package.zip");
-        setNotice("Exported the ZIP package with the board, palettes, and selected sources.");
-      }).catch((error: unknown) => setNotice(error instanceof Error ? error.message : "Export failed."));
-      return;
-    }
-    const manifest = { brief: briefInput, references: visibleReferences, exportedAt: new Date().toISOString() };
-    downloadBlob(new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" }), "creative-reference-manifest.json");
-    downloadBlob(new Blob([posterboardHtml(briefInput, visibleReferences)], { type: "text/html" }), "posterboard.html");
-    setNotice("Exported the posterboard and analysis manifest.");
   }
 
   const palettes = result ? [
@@ -582,11 +567,16 @@ export default function HomePage() {
             <div className="mosaic-chips"><span className="mosaic-chip mosaic-chip-warm">{direction.mood}</span><span className="mosaic-chip">{direction.style}</span><span className="mosaic-chip">{direction.subject}</span><span className="mosaic-chip">poster</span></div>
             <div className="mosaic-divider" />
             <div className="mosaic-input-heading"><div><p className="mosaic-field-label">REFERENCE SOURCES</p><p className="mosaic-helper">Bring your own library, discover online, or both.</p></div><button type="button" className={`mosaic-toggle ${autoSearch ? "on" : ""}`} onClick={() => setAutoSearch((current) => !current)} aria-pressed={autoSearch}><span />{autoSearch ? "AUTO ON" : "AUTO OFF"}</button></div>
-            <label className="mosaic-folder-drop" htmlFor="reference-folder"><input id="reference-folder" type="file" multiple accept={ACCEPTED_FILE_TYPES} onChange={(event) => handleFiles(event.target.files)} {...({ webkitdirectory: "" } as Record<string, string>)} /><span className="mosaic-folder-icon">＋</span><strong>{files.length ? `${files.length} files attached` : "Attach a reference folder"}</strong><small>{files.length ? "Ready for local analysis" : "Up to 50 PNG, JPG, PDF, SVG, TXT and more"}</small></label>
+            <div className="mosaic-upload-options">
+              <label className="mosaic-folder-drop" htmlFor="reference-files"><input id="reference-files" type="file" multiple accept={ACCEPTED_FILE_TYPES} onChange={(event) => handleFiles(event.target.files)} /><span className="mosaic-folder-icon">＋</span><strong>{files.length ? `${files.length} files attached` : "Attach reference files"}</strong><small>{files.length ? "Ready for local analysis" : "Up to 50 PNG, JPG, PDF, SVG, TXT and more"}</small></label>
+              <input id="reference-folder" className="mosaic-hidden-file-input" type="file" multiple accept={ACCEPTED_FILE_TYPES} onChange={(event) => handleFiles(event.target.files)} {...({ webkitdirectory: "" } as Record<string, string>)} />
+              <label className="mosaic-folder-alternative" htmlFor="reference-folder">Or choose a reference folder</label>
+            </div>
             {autoSearch && <div className="mosaic-provider-row"><span className="mosaic-provider-badge">◎</span><div><strong>Open-license discovery</strong><small>Wikimedia Commons demo adapter · attribution retained</small></div><span className="mosaic-ready-label">READY</span></div>}
             <div className="mosaic-divider" />
             <div className="mosaic-field-row"><div><label className="mosaic-field-label" htmlFor="format">OUTPUT FORMAT</label><select id="format" value={selectedFormat} onChange={(event) => updateConstraint("format", event.target.value)}><option value="any">Any format</option><option value="poster">Poster</option><option value="editorial">Editorial</option><option value="social">Social</option><option value="branding">Branding</option></select></div><div><label className="mosaic-field-label" htmlFor="output">OUTPUT TYPE</label><select id="output" value={selectedOutput} onChange={(event) => updateConstraint("output", event.target.value)}><option value="both">Print + screen</option><option value="print">Print</option><option value="screen">Screen</option></select></div></div>
             <button className="mosaic-analyze-button" type="submit" disabled={!canAnalyze}><span>{status === "scanning" ? "ANALYZING LIBRARY" : status === "ready" ? "RERUN ANALYSIS" : "ANALYZE REFERENCES"}</span><b>↗</b></button>
+            {analysisHint && <p className="mosaic-action-hint" role="status">{analysisHint}</p>}
             {status === "scanning" && <div className="mosaic-progress-message" role="status"><span style={{ width: `${progress}%` }} />{progressMessage || "Reading visual signals…"}</div>}
             {notice && <p className="mosaic-notice" role="status">{notice}</p>}
           </form>
@@ -594,9 +584,10 @@ export default function HomePage() {
         </aside>
 
         <section className="mosaic-board-column">
-          <div className="mosaic-board-header"><div><p className="mosaic-eyebrow">REFERENCE BOARD {status === "ready" ? "· UPDATED JUST NOW" : status === "scanning" ? "· ANALYZING" : "· AWAITING INPUT"}</p><h2>{status === "ready" ? `${visibleReferences.length} signals for your direction` : status === "scanning" && visibleReferences.length > 0 ? `${visibleReferences.length} signals ready — continuing analysis` : "A considered starting point"}</h2></div><div className="mosaic-board-actions"><button type="button" className="mosaic-ghost-button" onClick={handleReset}>RESET</button><button type="button" className="mosaic-export-button" disabled={!visibleReferences.length || status === "scanning"} onClick={handleExport}>EXPORT BOARD ↗</button></div></div>
+          <div className="mosaic-board-header"><div><p className="mosaic-eyebrow">REFERENCE BOARD {status === "ready" ? "· UPDATED JUST NOW" : status === "scanning" ? "· ANALYZING" : "· AWAITING INPUT"}</p><h2>{status === "ready" ? `${visibleReferences.length} signals for your direction` : status === "scanning" && visibleReferences.length > 0 ? `${visibleReferences.length} signals ready — continuing analysis` : "A considered starting point"}</h2></div><div className="mosaic-board-actions"><button type="button" className="mosaic-ghost-button" onClick={handleReset}>RESET</button></div></div>
           <div className="mosaic-board-toolbar"><div className="mosaic-tabs"><button type="button" className={tab === "all" ? "active" : ""} onClick={() => { setTab("all"); setPage(0); }} aria-pressed={tab === "all"}>ALL <small>{visibleReferences.length}</small></button><button type="button" className={tab === "local" ? "active" : ""} onClick={() => { setTab("local"); setPage(0); }} aria-pressed={tab === "local"}>LOCAL <small>{visibleReferences.filter((reference) => reference.source === "local").length}</small></button><button type="button" className={tab === "online" ? "active" : ""} onClick={() => { setTab("online"); setPage(0); }} aria-pressed={tab === "online"}>ONLINE <small>{visibleReferences.filter((reference) => reference.source === "online").length}</small></button></div><span className="mosaic-board-sort">RANKED BY FIT <span>↓</span></span></div>
-          {result?.aiAnalysis?.enabled && <div className={`mosaic-ai-coverage ${result.aiAnalysis.failed > 0 ? "warning" : "ready"}`}><strong>{result.aiAnalysis.provider?.toUpperCase()} AI COVERAGE</strong><span>{result.aiAnalysis.visionCompleted + result.aiAnalysis.textFallback}/{result.aiAnalysis.requested} references analyzed · {result.aiAnalysis.visionCompleted} vision · {result.aiAnalysis.textFallback} text fallback · {result.aiAnalysis.failed} failed</span>{result.aiAnalysis.errors[0] && <small>{result.aiAnalysis.errors[0]}</small>}</div>}
+           {result?.aiAnalysis?.enabled && <div className="mosaic-ai-coverage ready"><strong>{result.aiAnalysis.provider?.toUpperCase()} AI COVERAGE</strong><span>{result.aiAnalysis.visionCompleted + result.aiAnalysis.textFallback + result.aiAnalysis.failed + result.aiAnalysis.skipped}/{result.aiAnalysis.requested} references processed · {result.aiAnalysis.visionCompleted} vision · {result.aiAnalysis.provider === "replicate" ? `${result.aiAnalysis.failed + result.aiAnalysis.skipped} deterministic fallback` : `${result.aiAnalysis.textFallback} text fallback · ${result.aiAnalysis.failed + result.aiAnalysis.skipped} deterministic fallback`}</span></div>}
+           {visiblePromptAnalysis && <div className="mosaic-board-analysis-panels"><PromptAnalysisPanel analysis={visiblePromptAnalysis} />{result?.referenceSynthesis && <ReferenceSynthesisPanel synthesis={result.referenceSynthesis} />}</div>}
           {status === "idle" && <div className="mosaic-empty-board"><div className="mosaic-empty-glyph">M</div><h3>Your board starts here.</h3><p>Write a brief, attach a folder, or toggle Automatic Search. Mosaic will return references with the reasoning attached.</p><div className="mosaic-empty-lines"><span /><span /><span /></div></div>}
           {status === "scanning" && <div className="mosaic-loading-board"><span className="mosaic-loader" /><p>{visibleReferences.length > 0 ? "More references are still being analyzed…" : "Reading visual signals and checking source metadata…"}</p><div className="mosaic-progress-track"><span style={{ width: `${progress}%` }} /></div></div>}
           {status === "ready" && filteredReferences.length === 0 && <div className="mosaic-empty-board"><div className="mosaic-empty-glyph">↺</div><h3>No references in this view.</h3><p>Try another source tab or reset the board to start over.</p></div>}
@@ -607,8 +598,6 @@ export default function HomePage() {
                   <MosaicReferenceCard
                     key={reference.id}
                     reference={reference}
-                    expanded={expandedId === reference.id}
-                    onExpand={() => setExpandedId((current) => current === reference.id ? null : current)}
                     onPin={() => togglePin(reference)}
                     onRemove={() => removeReferenceFromBoard(reference)}
                     onSimilar={() => toggleSimilar(reference)}

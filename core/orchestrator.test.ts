@@ -59,6 +59,51 @@ describe("runAnalysis AI coverage reporting", () => {
     expect(result?.references[0]?.features.analysisSource).toBe("deterministic");
   });
 
+  it("retains all four references when one Replicate enrichment request fails", async () => {
+    const files: ReferenceFile[] = Array.from({ length: 4 }, (_, index) => ({
+      id: `replicate-reference-${index}`,
+      path: `/refs/replicate-${index}.jpg`,
+      filename: `replicate-${index}.jpg`,
+      mimeType: "image/jpeg",
+      sizeBytes: 100,
+      lastModified: 0,
+    }));
+    const buffer = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: { r: 190, g: 20, b: 30 } },
+    }).jpeg().toBuffer();
+    const events: ProgressEvent[] = [];
+
+    for await (const event of runAnalysis({
+      files,
+      brief: "A dramatic editorial poster",
+      aiProvider: {
+        provider: "replicate",
+        apiKey: "r8_test_token_1234567890",
+        model: "sai88uk/minicpm-v-45-v9:version",
+        source: "default",
+      },
+      analyzeVision: async (file) => {
+        if (file.id === files[2]?.id) throw new Error("Replicate image analysis failed: Replicate request timed out.");
+        return {
+          semanticDescription: "A distinct visual arrangement",
+          semanticTags: ["distinct"],
+          semanticMatch: 0.8,
+          semanticConfidence: 0.9,
+          analysisSource: "vision" as const,
+        };
+      },
+      readFile: async () => buffer,
+    })) {
+      events.push(event);
+    }
+
+    const result = events.find((event) => event.type === "done")?.result;
+    expect(result?.references).toHaveLength(4);
+    expect(result?.references.map((reference) => reference.file.id).sort()).toEqual(files.map((file) => file.id).sort());
+    expect(result?.aiAnalysis).toMatchObject({ requested: 4, visionCompleted: 3, failed: 1 });
+    expect(result?.references.find((reference) => reference.file.id === files[2]?.id)?.features.analysisSource).toBe("deterministic");
+  });
+
   it("keeps four AI requests active and refills a slot as soon as one completes", async () => {
     const files: ReferenceFile[] = Array.from({ length: 8 }, (_, index) => ({
       id: `groq-paced-${index}`,

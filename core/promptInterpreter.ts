@@ -1,4 +1,4 @@
-import type { CreativeDirection } from "./types";
+import type { CreativeDirection, PromptAnalysis } from "./types";
 import {
   MOOD_TERMS,
   STYLE_TERMS,
@@ -12,6 +12,11 @@ import {
 import type { AiProviderConfig } from "./aiProvider";
 import { generateStructuredText } from "./aiProvider";
 import { parseStructuredObject } from "./structuredJson";
+import {
+  normalizeProviderPromptAnalysis,
+  interpretPromptAnalysisDeterministic,
+  PROMPT_ANALYSIS_SYSTEM_PROMPT,
+} from "./promptAnalysis";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Prompt Interpreter
@@ -101,7 +106,17 @@ Return ONLY a valid JSON object matching this schema exactly — no markdown, no
   "colors": string[],
   "formats": string[],
   "constraints": [],
-  "ambiguities": string[]
+  "ambiguities": string[],
+  "dimensions": {
+    "subject": string[],
+    "poseGesture": string[],
+    "lightingMood": string[],
+    "palette": string[],
+    "materialTexture": string[],
+    "composition": string[],
+    "styleRendering": string[],
+    "other": string[]
+  }
 }
 - subject: visual subjects (food, people, architecture, nature, products, etc.)
 - audience: target audience descriptors
@@ -111,6 +126,7 @@ Return ONLY a valid JSON object matching this schema exactly — no markdown, no
 - formats: output format (poster, logo, website, social, print, screen, etc.); return [] unless the brief explicitly names a format
 - constraints: always empty array — do not add constraints
 - ambiguities: any conflicting or unclear signals in the brief as plain strings
+- dimensions: concrete visual details stated or strongly implied by the brief. Leave a dimension empty when the brief does not address it; the application supplies project defaults for empty dimensions. Do not copy the defaults into these arrays.
 Use only values appropriate for the brief. Keep arrays concise (max 4 items each).`;
 
 function stringList(value: unknown): string[] {
@@ -164,12 +180,39 @@ export function parseProviderDirection(content: string, brief: string): Creative
   return normalizeProviderDirection(parsed, brief);
 }
 
+export interface PromptInterpretation {
+  creativeDirection: CreativeDirection;
+  promptAnalysis: PromptAnalysis;
+}
+
+function deterministicPromptInterpretation(brief: string): PromptInterpretation {
+  return {
+    creativeDirection: interpretDeterministic(brief),
+    promptAnalysis: interpretPromptAnalysisDeterministic(brief),
+  };
+}
+
+export function parseProviderInterpretation(
+  content: string,
+  brief: string
+): PromptInterpretation {
+  const parsed = parseStructuredObject<Record<string, unknown>>(content);
+  return {
+    creativeDirection: normalizeProviderDirection(parsed as Partial<CreativeDirection>, brief),
+    promptAnalysis: normalizeProviderPromptAnalysis(parsed, brief),
+  };
+}
+
 async function interpretWithProvider(
   brief: string,
   provider: AiProviderConfig
-): Promise<CreativeDirection> {
-  const content = await generateStructuredText(provider, SYSTEM_PROMPT, brief);
-  return parseProviderDirection(content, brief);
+): Promise<PromptInterpretation> {
+  const content = await generateStructuredText(
+    provider,
+    `${SYSTEM_PROMPT}\n\n${PROMPT_ANALYSIS_SYSTEM_PROMPT}`,
+    brief.slice(0, 2_000)
+  );
+  return parseProviderInterpretation(content, brief);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,7 +228,22 @@ export async function interpretPrompt(
   brief: string,
   provider?: AiProviderConfig
 ): Promise<CreativeDirection> {
-  if (!provider) return interpretDeterministic(brief);
+  const interpretation = await interpretPromptBundle(brief, provider);
+  return interpretation.creativeDirection;
+}
+
+/**
+ * Interpret the legacy direction and the default-first artist dimensions in
+ * one provider request so both views of the prompt stay consistent.
+ */
+export async function interpretPromptBundle(
+  brief: string,
+  provider?: AiProviderConfig
+): Promise<PromptInterpretation> {
+  if (!provider) return deterministicPromptInterpretation(brief);
+  // Replicate is configured as Mosaic's image-analysis provider. Its selected
+  // MiniCPM-V model should not receive a text-only brief request here.
+  if (provider.provider === "replicate") return deterministicPromptInterpretation(brief);
 
   try {
     return await interpretWithProvider(brief, provider);
@@ -193,5 +251,5 @@ export async function interpretPrompt(
     if (provider.source === "session") throw error;
   }
 
-  return interpretDeterministic(brief);
+  return deterministicPromptInterpretation(brief);
 }

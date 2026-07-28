@@ -11,7 +11,7 @@ export function parseStructuredObject<T extends Record<string, unknown>>(content
     .replace(/```/g, "")
     .trim();
 
-  const candidates: T[] = [];
+  const candidates: Array<{ value: T; start: number; end: number }> = [];
   for (let start = cleaned.indexOf("{"); start >= 0; start = cleaned.indexOf("{", start + 1)) {
     let depth = 0;
     let inString = false;
@@ -34,7 +34,9 @@ export function parseStructuredObject<T extends Record<string, unknown>>(content
       if (depth === 0) {
         try {
           const parsed = JSON.parse(cleaned.slice(start, index + 1)) as T;
-          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) candidates.push(parsed);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          candidates.push({ value: parsed, start, end: index });
+        }
         } catch {
           // Try the next possible object start. Model reasoning may contain
           // an example object before the final answer.
@@ -44,7 +46,18 @@ export function parseStructuredObject<T extends Record<string, unknown>>(content
     }
   }
 
-  const parsed = candidates.at(-1);
+  // Nested objects are also valid JSON fragments, but provider responses should
+  // be interpreted from their outermost object. Keep the last top-level object
+  // so prose containing multiple JSON examples still behaves as before.
+  const topLevelCandidates = candidates.filter((candidate, candidateIndex) =>
+    !candidates.some(
+      (container, containerIndex) =>
+        containerIndex !== candidateIndex &&
+        container.start < candidate.start &&
+        container.end >= candidate.end,
+    ),
+  );
+  const parsed = (topLevelCandidates.at(-1) ?? candidates.at(-1))?.value;
   if (!parsed) throw new Error("AI provider returned invalid structured JSON.");
   return parsed;
 }

@@ -6,16 +6,22 @@ import type {
   ProgressEvent,
   CreativeConstraint,
   SkippedFile,
+  PromptAnalysis,
 } from "./types";
 import { DEFAULT_SCORING_WEIGHTS } from "./types";
 import { analyzeFile } from "./analyzers/index";
-import { interpretPrompt } from "./promptInterpreter";
+import { interpretPromptBundle } from "./promptInterpreter";
 import { rankReferences } from "./ranker";
 import { analyzeStyleDNA } from "./styleDNA";
 import { analyzeDiversity } from "./diversityAnalyzer";
 import { generatePalettes } from "./paletteEngine";
 import { checkAccessibility } from "./accessibilityChecker";
 import { AiProviderError, type AiProviderConfig } from "./aiProvider";
+import {
+  evaluateReference,
+  synthesizeReferences,
+  synthesizeReferencesWithAi,
+} from "./referenceEvaluator";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Analysis Orchestrator
@@ -35,7 +41,8 @@ export interface OrchestratorInput {
     file: ReferenceFile,
     buffer: Buffer,
     brief: string,
-    features: import("./types").ReferenceFeatures
+    features: import("./types").ReferenceFeatures,
+    promptAnalysis?: PromptAnalysis
   ) => Promise<Partial<import("./types").ReferenceFeatures> | null>;
   preSkippedFiles?: SkippedFile[];
   /**
@@ -91,9 +98,18 @@ export async function* runAnalysis(
     progress: 2,
     message: "Interpreting brief…",
   };
+  const interpretation = await interpretPromptBundle(brief, aiProvider);
   const creativeDirection = {
-    ...(await interpretPrompt(brief, aiProvider)),
+    ...interpretation.creativeDirection,
     constraints,
+  };
+  const promptAnalysis = interpretation.promptAnalysis;
+
+  yield {
+    type: "prompt-analysis-complete",
+    progress: 4,
+    message: "Prompt defaults and overrides identified.",
+    promptAnalysis,
   };
 
   // ── 2. Analyse files in batches ──────────────────────────────────────────
@@ -128,7 +144,7 @@ export async function* runAnalysis(
         if (analyzeVision && file.mimeType.startsWith("image/")) {
           aiRequested += 1;
           try {
-            const semanticFeatures = await analyzeVision(file, buffer, brief, features);
+            const semanticFeatures = await analyzeVision(file, buffer, brief, features, promptAnalysis);
             if (semanticFeatures) {
               enrichedFeatures = {
                 ...features,
@@ -231,7 +247,7 @@ export async function* runAnalysis(
     message: "Ranking references…",
   };
 
-  const allRanked = rankReferences(
+  const rankedReferences = rankReferences(
     files,
     featuresMap as Map<string, import("./types").ReferenceFeatures>,
     creativeDirection,
@@ -244,7 +260,49 @@ export async function* runAnalysis(
   yield {
     type: "ranking-complete",
     progress: 75,
-    message: `Ranked ${allRanked.length} references.`,
+    message: `Ranked ${rankedReferences.length} references.`,
+    partialReferences: rankedReferences,
+  };
+
+  // ── Artist-oriented reference evaluation and synthesis ───────────────────
+  const allRanked = rankedReferences.map((reference) => ({
+    ...reference,
+    referenceEvaluation: evaluateReference(reference.file, reference.features, promptAnalysis),
+  }));
+
+  yield {
+    type: "reference-evaluation-complete",
+    progress: 78,
+    message: "Reference dimensions evaluated.",
+    partialReferences: allRanked,
+  };
+
+  const deterministicSynthesis = synthesizeReferences(allRanked, promptAnalysis);
+  let referenceSynthesis = deterministicSynthesis;
+  if (aiProvider) {
+    try {
+      const aiSynthesis = await synthesizeReferencesWithAi(
+        aiProvider,
+        brief,
+        promptAnalysis,
+        allRanked,
+        deterministicSynthesis
+      );
+      if (aiSynthesis) referenceSynthesis = aiSynthesis;
+    } catch (error) {
+      if (aiErrors.length < 3) {
+        const details = error instanceof Error ? error.message : "Set synthesis failed.";
+        aiErrors.push(`Set synthesis: ${details.slice(0, 240)}`);
+      }
+    }
+  }
+
+  yield {
+    type: "synthesis-complete",
+    progress: 80,
+    message: "Reference combination analysis complete.",
+    referenceSynthesis,
+    partialReferences: allRanked,
   };
 
   // ── 4. Style DNA ──────────────────────────────────────────────────────────
@@ -293,14 +351,16 @@ export async function* runAnalysis(
     sessionId,
     brief,
     creativeDirection,
+    promptAnalysis,
     references: allRanked,
+    referenceSynthesis,
     styleDNA,
     diversitySuggestions,
     palette,
     accessibilityFindings,
     skippedFiles,
     aiAnalysis: {
-      enabled: Boolean(aiProvider && analyzeVision),
+      enabled: Boolean(aiProvider && (analyzeVision || referenceSynthesis)),
       provider: aiProvider?.provider,
       requested: aiRequested,
       visionCompleted: aiVisionCompleted,

@@ -1,0 +1,25 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    env_file:
+      - path: .env.local
+        required: false
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "127.0.0.1:${MOSAIC_HOST_PORT:-9000}:9000"
+    volumes:
+      - .:/workspace
+      - mosaic_node_modules:/workspace/node_modules
+      - mosaic_next:/workspace/.next
+    init: true
+    stdin_open: true
+    tty: true
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  mosaic_node_modules:
+  mosaic_next:

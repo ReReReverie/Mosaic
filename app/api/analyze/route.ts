@@ -12,7 +12,6 @@ import { runAnalysis } from "@/core/orchestrator";
 import { validateWeights } from "@/core/ranker";
 import { scanFiles, type BrowserFileInput } from "@/core/scanner";
 import { getRequestKey, consumeRateLimit } from "@/lib/rateLimit";
-import { saveAnalysisSession } from "@/lib/sessionStore";
 import { resolveAiProvider } from "@/core/aiProvider";
 import { analyzeReferenceWithAi, isVisionEnabled, visionFileLimit } from "@/core/visionProvider";
 
@@ -237,10 +236,10 @@ export async function POST(req: NextRequest) {
             analyzeVision: isVisionEnabled() && aiProvider
               ? (() => {
                   let used = 0;
-                  return async (_file: ReferenceFile, buffer: Buffer, visionBrief: string, features: ReferenceFeatures) => {
+                  return async (_file: ReferenceFile, buffer: Buffer, visionBrief: string, features: ReferenceFeatures, promptAnalysis) => {
                     if (used >= visionFileLimit()) return null;
                     used += 1;
-                    return analyzeReferenceWithAi(aiProvider!, _file, buffer, features, visionBrief);
+                    return analyzeReferenceWithAi(aiProvider!, _file, buffer, features, visionBrief, promptAnalysis);
                   };
                 })()
               : undefined,
@@ -252,7 +251,6 @@ export async function POST(req: NextRequest) {
               await registerNewThumbnails(event.partialReferences);
             }
             if (event.type === "done" && event.result) {
-              await saveAnalysisSession(event.result);
               await registerNewThumbnails(event.result.references);
             }
             controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));

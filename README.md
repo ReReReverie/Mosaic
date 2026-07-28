@@ -5,7 +5,7 @@ Mosaic is an analytical AI partner for graphic and visual designers. Enter a cre
 ## Installation
 
 This section is written for a teammate or hackathon judge starting on a fresh
-device. The default setup does not require an API key or a Neon account; the app
+device. The default setup does not require an API key or any hosted service; the app
 uses deterministic analysis and browser-local state when hosted services are not
 configured.
 
@@ -53,20 +53,21 @@ Copy-Item .env.example .env.local
 ```
 
 Leave the copied file unchanged for the fastest deterministic demo. Add a
-server-side `GEMINI_API_KEY` only if you want hosted AI-assisted brief
-interpretation. Never commit `.env.local`, expose secrets through `NEXT_PUBLIC_`
-variables, or put a personal API key in a deployment environment.
+provider key only if you want AI-assisted brief interpretation and reference
+enrichment. Never commit `.env.local`, expose secrets through `NEXT_PUBLIC_`
+variables, or put a personal API key in source control.
 
-### 4. Start the website
+### 4. Start the website in Docker
 
 ```bash
-npm run dev
+docker compose up --build
 ```
 
 Open [http://localhost:9000](http://localhost:9000) in your browser. Enter a
 brief, choose a folder of reference files, and run the analysis. Supported
 inputs include common image files, PDFs, SVGs, text files, and documents. A
-reference folder is limited to 50 files per analysis.
+reference folder is limited to 50 files per analysis. The container includes
+the native image and PDF tooling required by the scanner.
 
 ### Quick-start command list
 
@@ -76,15 +77,19 @@ For a judge who only needs to run the demo:
 git clone https://github.com/ReReReverie/Mosaic.git
 cd Mosaic
 npm ci
-npm run dev
+docker compose up --build
 ```
 
 Then open [http://localhost:9000](http://localhost:9000).
 
 ### API configuration
 
-No API configuration is needed to test the website locally. The deterministic
-analysis path is enabled when no hosted key is configured:
+No API configuration is required to run the website locally, and the
+deterministic analysis path remains available without one. However, results
+will be limited and may become stale without AI enrichment. Mosaic's core idea
+is Analytical AI, so we strongly advise using your own personal provider API
+key for the most complete and current results. Optional provider keys are
+loaded from `.env.local` by Docker:
 
 ```dotenv
 GEMINI_API_KEY=
@@ -96,92 +101,53 @@ ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL=claude-3-5-haiku-latest
 GROQ_API_KEY=
 GROQ_MODEL=qwen/qwen3.6-27b
+REPLICATE_API_TOKEN=
+REPLICATE_MODEL=sai88uk/minicpm-v-45-v9:5f9e86550c3540aab9292e0cae22f71bb75724be3c9bb72ebf0798d028f0f27b
 OLLAMA_ENABLED=
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.2
-DATABASE_URL=
+OLLAMA_MODEL=llama3.2-vision
 MOSAIC_VISION_ENABLED=true
 MOSAIC_VISION_MAX_FILES=50
 # Maximum concurrent AI reference enrichments (1-4). Default: 4.
 MOSAIC_AI_MAX_CONCURRENCY=4
 ```
 
-For the hosted Vercel deployment, set `GEMINI_API_KEY` in Vercel's server-only
-environment variables. Gemini is the default provider. `OPENAI_API_KEY` is
-retained as a backwards-compatible fallback for existing deployments; the
-Anthropic, Groq, and Ollama variables are available for intentional server-side
-configuration.
+Gemini remains the first default when `GEMINI_API_KEY` is configured. The
+Anthropic, Groq, Replicate, and Ollama variables are available for intentional
+local Docker configuration.
 
 ### Personal API keys (session-only)
 
-The Mosaic UI lets a user temporarily override the hosted Gemini provider with
+The Mosaic UI lets a user temporarily override the configured provider with
 their own key. The currently supported providers are Google Gemini, OpenAI,
-Anthropic Claude, Groq, and Ollama. Ollama runs locally and requires no API
-key — select it from the provider dropdown and leave the key field empty.
+Anthropic Claude, Groq, Replicate, and Ollama. Ollama runs locally and requires
+no API key — select it from the provider dropdown and leave the key field empty.
 
 To use a personal key:
 
 1. Open **Use your own engine** in the left sidebar.
-2. Select Google Gemini, OpenAI, or Anthropic.
+2. Select Google Gemini, OpenAI, Anthropic, Groq, Replicate, or Ollama.
 3. Paste the provider key and run an analysis.
 4. Clear the key or start a new session when finished.
 
 The key is kept in React memory only and sent to `/api/analyze` through a
-request header for the active request. It is not stored in Neon, localStorage,
-sessionStorage, URLs, application responses, or Vercel environment variables.
-Refreshing the page or clearing the key removes it from the browser. Only the
-project's default `GEMINI_API_KEY` belongs in Vercel's server-only environment.
+request header for the active request. It is not stored in localStorage,
+sessionStorage, URLs, application responses, or the Docker-mounted source tree.
+Refreshing the page or clearing the key removes it from the browser.
 
-### Neon persistence (deferred)
+### Local persistence
 
-Neon is not required for this installation. When backend configuration is
-ready, it can store analysis-session metadata so a saved board can be restored
-after a browser refresh. Uploaded source files remain ephemeral.
+Analysis metadata is persisted in the browser's local storage so the saved
+board can be reopened locally without a database. Uploaded source files remain
+ephemeral and are not written to the repository or Docker volumes.
 
-For later setup:
-
-1. Create a PostgreSQL database at [neon.tech](https://neon.tech).
-2. Run [`db/schema.sql`](db/schema.sql) in the Neon SQL Editor.
-3. Add the connection string to `.env.local` as `DATABASE_URL`.
-4. Restart the development server.
-
-If `DATABASE_URL` is omitted, the app still runs using browser-local state.
-
-### Hosted Vercel demo
-
-The shared Vercel demo can use a project-provided free-tier API configuration
-for hackathon testing. Because that configuration is shared, response speed
-and usage limits may vary. Set `GEMINI_API_KEY` as a server-only Vercel
-environment variable to enable the default Gemini provider. Users can also
-enter their own supported provider key from the AI Provider panel; that
-session override is never persisted by the application. The local
-installation does not require any API key.
-
-### Vercel deployment (deferred)
-
-Vercel is not required to install or test the app on a device. When deployment
-is ready, import the repository as a standard Next.js project and keep these
-defaults:
-
-- Framework preset: Next.js
-- Build command: `npm run build`
-- Output directory: leave the Vercel default
-- Node.js version: 20.x or newer
-
-Set `GEMINI_API_KEY` only when enabling the hosted default provider. Keep it as
-a server-only variable; do not prefix it with `NEXT_PUBLIC_`. Leave the
-optional provider variables unset unless you intentionally need server-side
-fallbacks. The analysis route uses the Node.js runtime for image and PDF
-processing.
-
-For a hackathon demo, use a reference folder with no more than 50 files. Uploaded files are sent to
-the analysis endpoint for the active session and are not durable file storage;
-cross-device file persistence would require object storage such as Vercel Blob,
-S3, or R2.
+For a local-only demo, use a reference folder with no more than 50 files.
+Uploaded files are sent to the local analysis container for the active session
+and are not durable file storage.
 
 ### Verification commands
 
-Run these before submitting or deploying:
+Run these before submitting or running the Docker image:
 
 ```bash
 npm run lint
@@ -189,14 +155,48 @@ npm test
 npm run build
 ```
 
-To run the production build locally:
+### Docker development
+
+To keep Node.js packages, native image/PDF tools, the Next.js server, and build
+artifacts out of the host environment, use Docker Desktop for development:
 
 ```bash
-npm run build
-npm start
+docker compose up --build
 ```
 
-Then open [http://localhost:9000](http://localhost:9000).
+Open [http://localhost:9000](http://localhost:9000) after the container starts.
+If port 9000 is already in use, set `MOSAIC_HOST_PORT` to another local port.
+
+PowerShell example:
+
+```powershell
+$env:MOSAIC_HOST_PORT = "9001"
+docker compose up --build
+```
+
+The equivalent Bash command is `MOSAIC_HOST_PORT=9001 docker compose up --build`.
+The repository is mounted only for source-code edits; `node_modules` and `.next`
+are stored in Docker-managed volumes. Install or update packages inside the
+container with:
+
+```bash
+docker compose run --rm app npm install <package-name>
+```
+
+Run checks in the same isolated environment with:
+
+```bash
+docker compose run --rm app npm test
+docker compose run --rm app npm run lint
+docker compose run --rm app npm run build
+```
+
+Copy `.env.example` to `.env.local` for local provider configuration. It is
+ignored by Git and loaded only into the container. If Ollama runs on the host,
+use `OLLAMA_BASE_URL=http://host.docker.internal:11434` inside `.env.local`.
+Docker Desktop still uses host disk and memory for its managed images and
+volumes, but application packages and native tools are not installed globally
+on Windows.
 
 ### Troubleshooting
 
@@ -209,9 +209,9 @@ Then open [http://localhost:9000](http://localhost:9000).
   engine** for the current session.
 - **PDFs have no thumbnail:** install GraphicsMagick or ImageMagick. PDF text
   analysis still works without either dependency.
-- **Neon session not found:** verify `DATABASE_URL`, run `db/schema.sql`, and
-  restart the server. Existing uploads still need to be selected again because
-  source files are intentionally not persisted.
+- **No saved board after clearing browser storage:** local board metadata is
+  stored in the browser. Existing uploads still need to be selected again
+  because source files are intentionally not persisted.
 
 ## Usage
 
@@ -220,7 +220,6 @@ Then open [http://localhost:9000](http://localhost:9000).
 3. Adjust creative constraints (format, output type, scoring weights) as needed
 4. Review the ranked posterboard
 5. Pin, remove, or mark references as too similar
-6. Export the package as a ZIP
 
 ## Features
 
@@ -230,15 +229,20 @@ Then open [http://localhost:9000](http://localhost:9000).
 - **Diversity Suggestions** — detects repetitive boards and recommends alternatives
 - **Palette Recommendations** — three palette options derived from your references
 - **Accessibility Checker** — WCAG 2.1 AA contrast and color-blind risk warnings
-- **ZIP Export** — portable package with references, palettes, and a standalone posterboard.html
+
+## Work in progress
+
+- **Per-reference View analysis** - temporarily hidden while the interaction
+  and rendering behavior are refined. See [`read.md`](read.md) for the current
+  status.
 
 ## AI Enhancement
 
 When `GEMINI_API_KEY` is set, Gemini improves prompt parsing and explanation
-quality. OpenAI and Anthropic are also supported as session-only personal
+quality. OpenAI, Anthropic, Groq, Replicate, and Ollama are also supported as session-only personal
 overrides from the UI. When a provider is configured, AI also analyzes up to
 `MOSAIC_VISION_MAX_FILES` references (50 by default, enough for the normal
-board size): Gemini/OpenAI/Groq vision-capable models
+board size): Gemini/OpenAI/Groq/Ollama/Replicate vision-capable models
 receive the image, while text-only models receive the measured visual evidence
 and metadata. Set `MOSAIC_VISION_ENABLED=false` to keep analysis local. Provider
 failures always fall back to deterministic pixel and metadata analysis. Match
@@ -250,6 +254,19 @@ by default and refills a slot as soon as an image completes. Set
 `MOSAIC_AI_MAX_CONCURRENCY` to a value from 1 to 4 to tune throughput. If the
 provider exhausts its rate-limit retries, the scheduler backs off for the
 remaining images and those images keep their deterministic fallback analysis.
+
+### API used for this project
+
+The AI-assisted image analysis used while building and testing this project
+ran through the [Replicate API](https://replicate.com/) with the pinned
+MiniCPM-V model:
+
+`sai88uk/minicpm-v-45-v9`
+
+We were only able to obtain limited credits for development, so response
+availability and the number of AI-enriched references may be limited. The
+project still includes a deterministic local analysis path when no provider is
+available.
 
 ### Free image-capable API options
 
@@ -266,8 +283,12 @@ remaining images and those images keep their deterministic fallback analysis.
   vision-capable model such as `qwen/qwen3.6-27b`; the default in this project
   is configured accordingly. See [Groq vision](https://console.groq.com/docs/vision)
   and [rate limits](https://console.groq.com/docs/rate-limits).
-- **Ollama** — free local inference with no hosted API key; install a vision
-  model such as LLaVA and send images through its local API. See [Ollama vision models](https://ollama.com/blog/vision-models).
+- **Replicate** - runs the pinned [MiniCPM-V model](https://replicate.com/sai88uk/minicpm-v-45-v9),
+  which accepts image and video inputs. Mosaic currently sends one resized image
+  per request; video files are still skipped by the scanner.
+- **Ollama** — free local inference with no hosted API key. Install a vision
+  model such as [`llama3.2-vision`](https://ollama.com/library/llama3.2-vision)
+  and Mosaic will send each normalized image through Ollama's local vision API.
 
 For this app, Gemini is the simplest hosted default, Groq is a fast hosted
 alternative, OpenRouter is useful when you want to swap free models, and Ollama
@@ -275,6 +296,15 @@ is the privacy-first option. Never put provider keys in `NEXT_PUBLIC_` variables
 or commit them to the repository.
 
 ## Limitations
+
+### Hosted-site AI limitation
+
+To fully experience Mosaic's capabilities, the hosted site needs access to an
+AI provider API. We are students and are not able to provide a shared API key
+or maintain the paid credits required to run that service for everyone. We are
+truly sorry for this limitation. Please configure your own provider key for
+the complete experience, or run the project locally with a provider such as
+Ollama.
 
 - Each analysis accepts up to 50 files, with a combined upload limit of 250 MB
   and a 50 MB limit per file.
@@ -289,9 +319,11 @@ or commit them to the repository.
   deterministic fallback analysis. AI results are advisory and may vary by
   provider or model; paid APIs can improve availability but do not guarantee
   fixed response times.
-- Uploaded source files are ephemeral. Cross-device persistence and Neon-backed
-  session restoration are not currently available.
-- The shared hosted demo may have variable response times and provider quotas.
+- Without an AI provider/API key, semantic prompt interpretation, image
+  enrichment, and richer set-level synthesis are limited. The deterministic
+  local analysis remains available.
+- Uploaded source files are ephemeral. Cross-device persistence is not currently
+  available because the project intentionally has no hosted database.
 
 ## Notes on PDF Thumbnails
 

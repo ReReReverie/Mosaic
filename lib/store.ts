@@ -234,10 +234,10 @@ export const useBoardStore = create<Store>()(
         brief: state.brief,
         constraints: state.constraints,
         scoringWeights: state.scoringWeights,
+        result: state.result,
         pinnedIds: state.pinnedIds,
         removedIds: state.removedIds,
         tooSimilarIds: state.tooSimilarIds,
-        // Note: result is NOT persisted — it's re-fetched on load if needed
       }),
     }
   )

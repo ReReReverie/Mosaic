@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateStructuredText, resolveAiProvider } from "./aiProvider";
+import { REPLICATE_DEFAULT_MODEL } from "./replicateProvider";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -33,6 +34,7 @@ describe("resolveAiProvider", () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     vi.stubEnv("ANTHROPIC_API_KEY", "");
     vi.stubEnv("GROQ_API_KEY", "");
+    vi.stubEnv("REPLICATE_API_TOKEN", "");
     vi.stubEnv("OLLAMA_ENABLED", "");
 
     expect(resolveAiProvider()).toBeUndefined();
@@ -75,6 +77,30 @@ describe("resolveAiProvider", () => {
     });
   });
 
+  it("uses Replicate from server env with the pinned MiniCPM-V model", () => {
+    vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("GROQ_API_KEY", "");
+    vi.stubEnv("REPLICATE_API_TOKEN", "r8_test_token_1234567890");
+    vi.stubEnv("OLLAMA_ENABLED", "");
+
+    expect(resolveAiProvider()).toMatchObject({
+      provider: "replicate",
+      apiKey: "r8_test_token_1234567890",
+      model: REPLICATE_DEFAULT_MODEL,
+      source: "default",
+    });
+  });
+
+  it("rejects text-only generation for Replicate instead of making an unsupported request", async () => {
+    await expect(generateStructuredText(
+      { provider: "replicate", apiKey: "r8_test_token_1234567890", model: REPLICATE_DEFAULT_MODEL, source: "session" },
+      "System prompt",
+      "User prompt"
+    )).rejects.toThrow(/image analysis only/i);
+  });
+
   it("accepts a Groq session override", () => {
     expect(resolveAiProvider({ provider: "groq", apiKey: "personal-groq-key-abc" })).toMatchObject({
       provider: "groq",
@@ -113,6 +139,7 @@ describe("resolveAiProvider", () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     vi.stubEnv("ANTHROPIC_API_KEY", "");
     vi.stubEnv("GROQ_API_KEY", "");
+    vi.stubEnv("REPLICATE_API_TOKEN", "");
     vi.stubEnv("OLLAMA_ENABLED", "true");
 
     expect(resolveAiProvider()).toMatchObject({

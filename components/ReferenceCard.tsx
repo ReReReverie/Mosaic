@@ -1,9 +1,8 @@
 "use client";
 
-import React from "react";
 import Image from "next/image";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { RankedReference } from "@/core/types";
+import { ANALYZER_DIMENSION_LABELS, type RankedReference } from "@/core/types";
 
 interface Props {
   reference: RankedReference;
@@ -25,10 +24,16 @@ export function ReferenceCard({ reference, onPin, onUnpin, onRemove, onMarkSimil
   const { label, style: badgeStyle } = matchBadge(score);
   const isImage = file.mimeType.startsWith("image/");
   const pct = Math.round(score * 100);
+  const evaluation = reference.referenceEvaluation;
+  const safeReasons = Array.isArray(reasons) ? reasons : [];
+  const safeColors = Array.isArray(features.colors) ? features.colors : [];
+  const safeStrongFor = Array.isArray(evaluation?.strongFor) ? evaluation.strongFor : [];
+  const safeWeakFor = Array.isArray(evaluation?.weakFor) ? evaluation.weakFor : [];
+  const safeDimensions = Array.isArray(evaluation?.dimensions) ? evaluation.dimensions : [];
 
   return (
     <div
-      className="group flex flex-col overflow-hidden rounded-xl transition-all"
+      className="reference-card group flex flex-col overflow-hidden rounded-xl transition-all"
       style={{
         background: "var(--surface-3)",
         border: isPinned
@@ -68,7 +73,7 @@ export function ReferenceCard({ reference, onPin, onUnpin, onRemove, onMarkSimil
             className="rounded-md px-2 py-0.5 text-xs font-semibold"
             style={badgeStyle}
           >
-            {label} · {pct}%
+            {evaluation ? `${evaluation.overallMatchScore}/10 · ` : ""}{label} · {pct}%
           </span>
         </div>
 
@@ -112,7 +117,7 @@ export function ReferenceCard({ reference, onPin, onUnpin, onRemove, onMarkSimil
 
         {/* Reasons */}
         <ul className="flex flex-col gap-0.5">
-          {reasons.slice(0, 3).map((r, i) => (
+          {safeReasons.slice(0, 3).map((r, i) => (
             <li key={i} className="flex gap-1.5 text-xs" style={{ color: "var(--text-2)" }}>
               <span style={{ color: "var(--text-3)", flexShrink: 0 }}>–</span>
               <span>{r}</span>
@@ -120,10 +125,43 @@ export function ReferenceCard({ reference, onPin, onUnpin, onRemove, onMarkSimil
           ))}
         </ul>
 
+        {evaluation && (
+          <>
+            {safeStrongFor.length > 0 && (
+              <p className="text-[11px]" style={{ color: "var(--lime)", lineHeight: 1.35 }}>
+                <strong>Strong for:</strong> {evaluation.strongFor.slice(0, 2).join(" · ")}
+              </p>
+            )}
+            {safeWeakFor.length > 0 && (
+              <p className="text-[11px]" style={{ color: "var(--warn-color)", lineHeight: 1.35 }}>
+                <strong>Weak for:</strong> {evaluation.weakFor.slice(0, 2).join(" · ")}
+              </p>
+            )}
+            <details className="rounded-md p-2" style={{ background: "var(--surface-4)" }}>
+              <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                Dimension scores
+              </summary>
+              <div className="mt-2 flex flex-col gap-1.5">
+                {safeDimensions.map((dimension) => (
+                  <div key={dimension.dimension} className="flex items-start justify-between gap-2 text-[10px]">
+                    <span style={{ color: "var(--text-2)" }}>{ANALYZER_DIMENSION_LABELS[dimension.dimension]}</span>
+                    <span className="text-right" style={{ color: dimension.applicable ? "var(--text-1)" : "var(--text-3)" }}>
+                      {dimension.applicable && dimension.score !== null ? `${dimension.score}/10` : "N/A"}
+                      <small className="ml-1 uppercase" style={{ color: dimension.source === "prompt" ? "var(--lime)" : "var(--text-3)" }}>
+                        · {dimension.source === "prompt" ? "Prompt" : "Default"}
+                      </small>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          </>
+        )}
+
         {/* Color swatches */}
-        {features.colors.length > 0 && (
+        {safeColors.length > 0 && (
           <div className="flex gap-1.5">
-            {features.colors.slice(0, 5).map((c, index) => (
+            {safeColors.slice(0, 5).map((c, index) => (
               <Tooltip key={`${file.id}-${c.hex}-${index}`}>
                 <TooltipTrigger>
                   <span
