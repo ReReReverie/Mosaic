@@ -2,6 +2,11 @@
 
 Mosaic is an analytical AI partner for graphic and visual designers. Enter a creative brief, select a reference folder, and get a ranked moodboard with explainable reasons, Style DNA, diversity suggestions, palette recommendations, and accessibility warnings.
 
+## Project leadership
+
+- **Lead developer / team leader:** Lanz Martene
+- **Project manager:** RodelioC03
+
 ## Installation
 
 This section is written for a teammate or hackathon judge starting on a fresh
