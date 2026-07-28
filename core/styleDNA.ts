@@ -52,7 +52,7 @@ function aggregateColors(
 }
 
 /**
- * Build a natural-language summary sentence from measured values.
+ * Build a natural-language design-crit summary from measured values.
  * Always template-based — never LLM-generated.
  */
 function buildSummary(
@@ -63,37 +63,46 @@ function buildSummary(
   contrast: number,
   overrepresented: string[]
 ): string {
-  const parts: string[] = [];
-
-  // Brightness descriptor
-  if (brightness > 0.65) parts.push("bright");
-  else if (brightness < 0.35) parts.push("dark");
-  else parts.push("mid-toned");
-
-  // Saturation descriptor
-  if (saturation > 0.55) parts.push("vibrant");
-  else if (saturation < 0.25) parts.push("muted");
-
-  // Contrast descriptor
-  if (contrast > 0.55) parts.push("high-contrast");
-  else if (contrast < 0.25) parts.push("low-contrast");
-
-  // Orientation descriptor
-  parts.push(`${dominantOrientation}-oriented`);
-
-  // Illustrative flag
+  const n = refs.length;
   const illustrativeFraction = fraction(refs, (r) => r.features.isIllustrative);
-  if (illustrativeFraction > 0.6) parts.push("illustrative");
-  else if (illustrativeFraction < 0.3) parts.push("photographic");
+  const illustrativeCount = Math.round(illustrativeFraction * n);
 
-  const descriptor = parts.join(", ");
-  let summary = `Your selected references are mostly ${descriptor}.`;
+  // ── Tone sentence ─────────────────────────────────────────────────────────
+  const brightWord = brightness > 0.65 ? "high-key" : brightness < 0.35 ? "low-key" : "mid-toned";
+  const satWord    = saturation > 0.55  ? "richly saturated" : saturation < 0.25 ? "desaturated" : "moderately saturated";
+  const contWord   = contrast > 0.55    ? "high contrast" : contrast < 0.25 ? "very soft contrast" : "moderate contrast";
 
-  if (overrepresented.length > 0) {
-    summary += ` Overrepresented patterns: ${overrepresented.join("; ")}.`;
+  const toneSentence = `This board leans ${brightWord} and ${satWord}, with ${contWord} overall.`;
+
+  // ── Orientation sentence ──────────────────────────────────────────────────
+  let orientSentence = "";
+  if (dominantOrientation !== "mixed") {
+    const orientWord = dominantOrientation === "portrait" ? "portrait" : dominantOrientation === "landscape" ? "landscape" : "square";
+    const orientCount = refs.filter((r) => r.features.orientation === dominantOrientation).length;
+    orientSentence = ` ${orientCount} of ${n} references are ${orientWord}-oriented.`;
+  } else {
+    orientSentence = ` Orientation is mixed across the set — good for flexible cropping.`;
   }
 
-  return summary;
+  // ── Medium sentence ───────────────────────────────────────────────────────
+  let mediumSentence = "";
+  if (illustrativeFraction > 0.6) {
+    mediumSentence = ` ${illustrativeCount} of ${n} are illustrative or vector — expect a graphic, constructed aesthetic.`;
+  } else if (illustrativeFraction > 0.2) {
+    mediumSentence = ` Mix of ${illustrativeCount} illustrative and ${n - illustrativeCount} photographic references.`;
+  } else {
+    mediumSentence = ` ${n - illustrativeCount} of ${n} are photographic — grounded in real-world texture and light.`;
+  }
+
+  // ── Overrepresentation warning ────────────────────────────────────────────
+  let warningSentence = "";
+  if (overrepresented.length === 1) {
+    warningSentence = ` Watch out: ${overrepresented[0]} dominates the board.`;
+  } else if (overrepresented.length > 1) {
+    warningSentence = ` Overrepresented patterns — ${overrepresented.slice(0, 2).join(" and ")} — may narrow the creative range.`;
+  }
+
+  return `${toneSentence}${orientSentence}${mediumSentence}${warningSentence}`;
 }
 
 export function analyzeStyleDNA(refs: RankedReference[]): StyleDNA {

@@ -58,6 +58,21 @@ export interface ReferenceFeatures {
   heightPx: number;
   /** true for SVG / illustration, false for raster photo */
   isIllustrative: boolean;
+  /**
+   * 0–1 fraction of pixels that differ significantly from their neighbours.
+   * High = busy/textured; low = flat/minimal.
+   */
+  edgeDensity: number;
+  /** Optional semantic evidence supplied by a multimodal provider. */
+  semanticDescription?: string;
+  /** AI's explanation of how the visible evidence supports the brief. */
+  semanticRationale?: string;
+  /** Short, visible observations used by the AI to reach its match judgment. */
+  semanticEvidence?: string[];
+  semanticTags?: string[];
+  semanticMatch?: number;
+  semanticConfidence?: number;
+  analysisSource?: "deterministic" | "vision" | "ai-text" | "mixed";
 }
 
 // ── Creative Direction ────────────────────────────────────────────────────────
@@ -141,6 +156,10 @@ export interface RankedReference {
   scoreBreakdown: ScoreBreakdown;
   /** Evidence-based human-readable reasons (2–4 strings) */
   reasons: string[];
+  /** Signals that materially contributed to the match explanation. */
+  matchBasis?: Array<"semantic" | "visual" | "metadata">;
+  /** Confidence in the evidence basis, separate from the fit score. */
+  matchConfidence?: number;
   isPinned: boolean;
   isRemoved: boolean;
   isTooSimilar: boolean;
@@ -232,8 +251,20 @@ export interface AnalysisResult {
   palette: PaletteSet;
   accessibilityFindings: AccessibilityFinding[];
   skippedFiles: SkippedFile[];
+  aiAnalysis?: AiAnalysisSummary;
   scoringWeights: ScoringWeights;
   analyzedAt: number;
+}
+
+export interface AiAnalysisSummary {
+  enabled: boolean;
+  provider?: "gemini" | "openai" | "anthropic" | "groq" | "ollama";
+  requested: number;
+  visionCompleted: number;
+  textFallback: number;
+  failed: number;
+  skipped: number;
+  errors: string[];
 }
 
 // ── Board State (Zustand / localStorage) ─────────────────────────────────────
@@ -280,6 +311,8 @@ export interface ProgressEvent {
   /** 0–100 */
   progress: number;
   message: string;
+  /** Ranked references available before the final analysis completes. */
+  partialReferences?: RankedReference[];
   /** Present only when type === "done" */
   result?: AnalysisResult;
   /** Present only when type === "error" */

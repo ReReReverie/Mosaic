@@ -51,8 +51,8 @@ export function StyleDNAPanel({ dna }: Props) {
             <div className="flex flex-col gap-2">
               <span className="t-label">Dominant Colors</span>
               <div className="flex gap-2">
-                {dna.colors.map((c) => (
-                  <div key={c.hex} className="flex flex-col items-center gap-1">
+                {dna.colors.map((c, index) => (
+                  <div key={`${c.hex}-${index}`} className="flex flex-col items-center gap-1">
                     <span
                       className="block h-7 w-7 rounded-lg"
                       style={{

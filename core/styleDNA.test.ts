@@ -43,6 +43,7 @@ function makeRef(overrides: {
       widthPx: 800,
       heightPx: 1131,
       isIllustrative: overrides.isIllustrative ?? false,
+      edgeDensity: 0.3,
     },
     score: 0.7,
     scoreBreakdown: {

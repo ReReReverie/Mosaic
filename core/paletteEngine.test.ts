@@ -21,6 +21,7 @@ function makeRef(id: string, hexColors: string[]): RankedReference {
       brightness: 0.5, saturation: 0.5, contrast: 0.5, aspectRatio: 1,
       orientation: "square", subjectPlacement: "center", hasText: false,
       extractedText: [], fileQualityScore: 0.8, widthPx: 800, heightPx: 800, isIllustrative: false,
+      edgeDensity: 0.3,
     },
     score: 0.7,
     scoreBreakdown: { promptRelevance: 0.7, semanticMatch: 0.7, visualFit: 0.7, colorSuitability: 0.7, fileQuality: 0.7, total: 0.7 },

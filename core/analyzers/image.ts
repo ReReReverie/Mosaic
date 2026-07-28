@@ -5,6 +5,7 @@ import {
   getOrientation,
   getAspectRatio,
   rgbToHsl,
+  colorDistance,
 } from "./utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,7 +33,7 @@ async function getSharp() {
 async function extractPixelSample(
   buffer: Buffer,
   sharp: Awaited<ReturnType<typeof getSharp>>
-): Promise<{ pixels: [number, number, number][]; width: number; height: number }> {
+): Promise<{ pixels: [number, number, number][]; width: number; height: number; sampleWidth: number; sampleHeight: number }> {
   const img = sharp(buffer);
   const meta = await img.metadata();
   const origW = meta.width ?? 1;
@@ -50,7 +51,7 @@ async function extractPixelSample(
     pixels.push([data[i], data[i + 1], data[i + 2]]);
   }
 
-  return { pixels, width: origW, height: origH };
+  return { pixels, width: origW, height: origH, sampleWidth: info.width, sampleHeight: info.height };
 }
 
 /**
@@ -122,6 +123,147 @@ function calcContrast(pixels: [number, number, number][]): number {
   return Math.sqrt(variance); // 0–0.5 range in practice
 }
 
+/**
+ * Detect whether an image is illustrative (flat-colour art, manga, vector render)
+ * rather than a photograph, by measuring k-means cluster tightness.
+ *
+ * Logic: photographs have many fine colour gradations → pixels spread far from
+ * their centroids. Illustrations / flat-art images have large regions of near-
+ * identical colour → most pixels sit very close to their centroid.
+ *
+ * We run a 6-centroid k-means on a subsample and compute the mean CIE76 distance
+ * of every pixel to its nearest centroid.  If the mean distance is below the
+ * threshold (i.e. tight clusters), the image is illustrative.
+ *
+ * Threshold of ~18 (on a 0–100 CIE76 scale) distinguishes flat art reliably
+ * without being thrown off by anti-aliasing artefacts.
+ */
+function detectIsIllustrative(sampled: [number, number, number][]): boolean {
+  if (sampled.length < 20) return false;
+
+  const centroids = kMeansColors(sampled, 6);
+  if (centroids.length === 0) return false;
+
+  // Compute mean distance from each pixel to its nearest centroid
+  let totalDist = 0;
+  for (const px of sampled) {
+    const minDist = Math.min(...centroids.map((c) => colorDistance(px, c)));
+    totalDist += minDist;
+  }
+  const meanDist = totalDist / sampled.length;
+
+  // Flat illustrations: meanDist < 18; photos: typically 25–45
+  return meanDist < 18;
+}
+
+/**
+ * Detect whether an image likely contains significant text using a luminance
+ * row-variance proxy.  Text lines create alternating light/dark horizontal bands
+ * (high variance row-to-row) that are distinctive from photographic content.
+ *
+ * Algorithm:
+ *   1. Compute mean luminance per row.
+ *   2. Compute first-order differences between consecutive row means.
+ *   3. If the standard deviation of those differences is above a threshold
+ *      AND the fraction of rows with a sign-flip (oscillating pattern) is
+ *      high enough, classify as text-bearing.
+ */
+function detectHasText(
+  pixels: [number, number, number][],
+  sampleWidth: number,
+  sampleHeight: number
+): boolean {
+  if (sampleHeight < 10 || sampleWidth < 10) return false;
+
+  // Mean luminance per row
+  const rowMeans: number[] = [];
+  for (let row = 0; row < sampleHeight; row++) {
+    let sum = 0;
+    for (let col = 0; col < sampleWidth; col++) {
+      const idx = row * sampleWidth + col;
+      if (idx >= pixels.length) break;
+      const [, , l] = rgbToHsl(pixels[idx][0], pixels[idx][1], pixels[idx][2]);
+      sum += l;
+    }
+    rowMeans.push(sum / sampleWidth);
+  }
+
+  // First-order differences
+  const diffs: number[] = [];
+  for (let i = 1; i < rowMeans.length; i++) {
+    diffs.push(rowMeans[i] - rowMeans[i - 1]);
+  }
+
+  // Std-dev of differences
+  const mean = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+  const variance =
+    diffs.reduce((a, d) => a + Math.pow(d - mean, 2), 0) / diffs.length;
+  const stdDev = Math.sqrt(variance);
+
+  // Count sign-flips (oscillating pattern characteristic of text lines)
+  let signFlips = 0;
+  for (let i = 1; i < diffs.length; i++) {
+    if (diffs[i] * diffs[i - 1] < 0) signFlips++;
+  }
+  const flipFraction = signFlips / (diffs.length - 1);
+
+  // Text-bearing: high oscillation AND meaningful amplitude
+  return stdDev > 0.04 && flipFraction > 0.45;
+}
+
+/**
+ * Compute edge density as the fraction of pixels that differ significantly
+ * (CIE76 > threshold) from the pixel immediately to their right or below.
+ * High = busy / textured; low = flat / minimal.
+ *
+ * We use a fast RGB approximation (squared Euclidean in RGB/255 space) instead
+ * of full CIE76 here because it's called on every pixel pair.
+ * Threshold ~0.05² ≈ 12.75 in 0–255 squared space.
+ */
+function calcEdgeDensity(
+  pixels: [number, number, number][],
+  sampleWidth: number,
+  sampleHeight: number
+): number {
+  if (pixels.length < 4) return 0.3;
+
+  const threshold = 1500; // squared RGB diff in 0–255 space (~39 per channel)
+  let edgeCount = 0;
+  let comparisons = 0;
+
+  for (let row = 0; row < sampleHeight; row++) {
+    for (let col = 0; col < sampleWidth; col++) {
+      const idx = row * sampleWidth + col;
+      if (idx >= pixels.length) continue;
+      const [r, g, b] = pixels[idx];
+
+      // Right neighbour
+      if (col + 1 < sampleWidth) {
+        const ridx = idx + 1;
+        if (ridx < pixels.length) {
+          const [r2, g2, b2] = pixels[ridx];
+          const d = (r - r2) ** 2 + (g - g2) ** 2 + (b - b2) ** 2;
+          if (d > threshold) edgeCount++;
+          comparisons++;
+        }
+      }
+
+      // Bottom neighbour
+      if (row + 1 < sampleHeight) {
+        const bidx = (row + 1) * sampleWidth + col;
+        if (bidx < pixels.length) {
+          const [r2, g2, b2] = pixels[bidx];
+          const d = (r - r2) ** 2 + (g - g2) ** 2 + (b - b2) ** 2;
+          if (d > threshold) edgeCount++;
+          comparisons++;
+        }
+      }
+    }
+  }
+
+  return comparisons > 0 ? edgeCount / comparisons : 0.3;
+}
+
 export const imageAnalyzer: ReferenceAnalyzer = {
   canAnalyze(file: ReferenceFile): boolean {
     return SUPPORTED_MIME.has(file.mimeType);
@@ -133,7 +275,8 @@ export const imageAnalyzer: ReferenceAnalyzer = {
   ): Promise<Partial<ReferenceFeatures>> {
     try {
       const sharp = await getSharp();
-      const { pixels, width, height } = await extractPixelSample(buffer, sharp);
+      const { pixels, width, height, sampleWidth, sampleHeight } =
+        await extractPixelSample(buffer, sharp);
 
       // Subsample pixels for speed (max 10k for k-means)
       const step = Math.max(1, Math.floor(pixels.length / 10000));
@@ -144,16 +287,18 @@ export const imageAnalyzer: ReferenceAnalyzer = {
       const { brightness, saturation } = calcBrightnessAndSaturation(sampled);
       const contrast = calcContrast(sampled);
 
-      // Estimate sample dimensions from subsample length
-      const sampleW = Math.min(SAMPLE_SIZE, width);
-      const sampleH = Math.min(SAMPLE_SIZE, height);
       const subjectPlacement = estimateSubjectPlacement(
         pixels,
         width,
         height,
-        sampleW,
-        sampleH
+        sampleWidth,
+        sampleHeight
       );
+
+      // Pixel-level heuristics
+      const isIllustrative = detectIsIllustrative(sampled);
+      const hasText = detectHasText(pixels, sampleWidth, sampleHeight);
+      const edgeDensity = calcEdgeDensity(pixels, sampleWidth, sampleHeight);
 
       // Resolution quality: DPI proxy using pixel area
       const megapixels = (width * height) / 1_000_000;
@@ -167,12 +312,13 @@ export const imageAnalyzer: ReferenceAnalyzer = {
         aspectRatio: getAspectRatio(width, height),
         orientation: getOrientation(width, height),
         subjectPlacement,
-        hasText: false, // image analyzer doesn't detect text
+        hasText,
         extractedText: [],
         fileQualityScore,
         widthPx: width,
         heightPx: height,
-        isIllustrative: false,
+        isIllustrative,
+        edgeDensity,
       };
     } catch {
       return {};

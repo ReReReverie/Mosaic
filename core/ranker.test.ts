@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { rankReferences, validateWeights } from "./ranker";
+import { interpretDeterministic } from "./promptInterpreter";
 import type {
   ReferenceFile,
   ReferenceFeatures,
   CreativeDirection,
+  CreativeConstraint,
   ScoringWeights,
 } from "./types";
 
@@ -40,7 +42,8 @@ function makeFeatures(overrides?: Partial<ReferenceFeatures>): ReferenceFeatures
     fileQualityScore: 0.8,
     widthPx: 1200,
     heightPx: 1700,
-    isIllustrative: false,
+      isIllustrative: false,
+    edgeDensity: 0.3,
     ...overrides,
   };
 }
@@ -144,6 +147,20 @@ describe("rankReferences", () => {
     result[0].reasons.forEach((r) => expect(typeof r).toBe("string"));
   });
 
+  it("puts reference-specific AI evidence ahead of repeated heuristics", () => {
+    const file = makeFile("a", "red-curtain.jpg");
+    const feat = makeFeatures({
+      semanticDescription: "Two figures meet against a saturated red curtain",
+      semanticRationale: "The face-to-face gesture and saturated red field support a dramatic editorial direction.",
+      semanticEvidence: ["face-to-face gesture", "saturated red field"],
+      semanticTags: ["theatrical", "intimate", "red curtain"],
+    });
+    const result = rankReferences([file], new Map([["a", feat]]), DIRECTION, WEIGHTS);
+    expect(result[0].reasons[0]).toMatch(/^AI why:/);
+    expect(result[0].reasons[0]).toContain("dramatic editorial direction");
+    expect(result[0].reasons[1]).toMatch(/^AI evidence:/);
+  });
+
   it("scoreBreakdown components sum to approximately total score", () => {
     const file = makeFile("a");
     const feat = makeFeatures();
@@ -157,5 +174,65 @@ describe("rankReferences", () => {
       bd.colorSuitability * WEIGHTS.colorSuitability +
       bd.fileQuality * WEIGHTS.fileQuality;
     expect(bd.total).toBeCloseTo(manual, 5);
+  });
+
+  it("does not apply a web-format reason when the brief has no format", () => {
+    const direction: CreativeDirection = {
+      ...DIRECTION,
+      formats: [],
+    };
+    const file = makeFile("a", "inspiring.jpg");
+    const result = rankReferences([file], new Map([["a", makeFeatures({ orientation: "landscape" })]]), direction, WEIGHTS);
+    expect(result[0].reasons.join(" ")).not.toMatch(/web format/i);
+  });
+
+  it("uses explicit UI constraints in visual fit", () => {
+    const constraints: CreativeConstraint[] = [{ type: "format", value: "poster", description: "Format: poster" }];
+    const direction = { ...DIRECTION, formats: [] };
+    const file = makeFile("a", "portrait.jpg");
+    const result = rankReferences([file], new Map([["a", makeFeatures({ orientation: "portrait" })]]), direction, WEIGHTS, new Set(), new Set(), constraints);
+    expect(result[0].reasons.join(" ")).toMatch(/poster format/i);
+  });
+
+  it("ranks a visually dramatic reference above a flat one for awe-inspiring intent", () => {
+    const direction = interpretDeterministic("Give me something awe inspiring.");
+    const dramatic = makeFeatures({ brightness: 0.3, saturation: 0.65, contrast: 0.8, edgeDensity: 0.7 });
+    const flat = makeFeatures({ brightness: 0.55, saturation: 0.12, contrast: 0.15, edgeDensity: 0.08 });
+    const result = rankReferences(
+      [makeFile("dramatic", "mountain.jpg"), makeFile("flat", "plain.jpg")],
+      new Map([["dramatic", dramatic], ["flat", flat]]),
+      direction,
+      WEIGHTS
+    );
+    expect(result[0].file.id).toBe("dramatic");
+  });
+
+  it("uses an independent mysterious mood signature", () => {
+    const direction = interpretDeterministic("Make it mysterious.");
+    const shadow = makeFeatures({ brightness: 0.25, saturation: 0.25, contrast: 0.7, edgeDensity: 0.45 });
+    const bright = makeFeatures({ brightness: 0.8, saturation: 0.25, contrast: 0.2, edgeDensity: 0.08 });
+    const result = rankReferences(
+      [makeFile("shadow", "shadow.jpg"), makeFile("bright", "bright.jpg")],
+      new Map([["shadow", shadow], ["bright", bright]]),
+      direction,
+      WEIGHTS
+    );
+    expect(result[0].file.id).toBe("shadow");
+  });
+
+  it("diversifies near-tied vague-brief results", () => {
+    const direction: CreativeDirection = {
+      subject: [], audience: [], mood: [], style: [], colors: [], formats: [], constraints: [], ambiguities: [],
+    };
+    const similarA = makeFeatures({ brightness: 0.25, saturation: 0.25, contrast: 0.3, orientation: "portrait", isIllustrative: false });
+    const similarB = makeFeatures({ brightness: 0.27, saturation: 0.26, contrast: 0.31, orientation: "portrait", isIllustrative: false });
+    const contrasting = makeFeatures({ brightness: 0.8, saturation: 0.7, contrast: 0.7, orientation: "landscape", isIllustrative: true });
+    const result = rankReferences(
+      [makeFile("a"), makeFile("b"), makeFile("c")],
+      new Map([["a", similarA], ["b", similarB], ["c", contrasting]]),
+      direction,
+      WEIGHTS
+    );
+    expect(result[1].file.id).toBe("c");
   });
 });

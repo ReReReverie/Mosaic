@@ -31,6 +31,7 @@ function makeRef(
       widthPx: 800,
       heightPx: 1131,
       isIllustrative: false,
+      edgeDensity: 0.3,
       ...overrides,
     },
     score: 0.7,

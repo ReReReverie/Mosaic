@@ -243,7 +243,7 @@ export default function BoardPage() {
             <StyleDNAPanel dna={styleDNA} />
             <DiversityPanel
               suggestions={diversitySuggestions}
-              onAddToBoard={() => {}}
+              onAddToBoard={(ids) => ids.forEach(pinReference)}
             />
             <PalettePanel palette={palette} />
             <AccessibilityPanel findings={accessibilityFindings} />

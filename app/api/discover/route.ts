@@ -7,10 +7,27 @@ export const runtime = "nodejs";
  * open-license Wikimedia Commons examples; production providers can replace
  * this route without changing the board UI.
  */
-export async function POST() {
+export async function POST(request: Request) {
+  const body = await request.json().catch(() => ({})) as { brief?: unknown };
+  const brief = typeof body.brief === "string" ? body.brief.toLowerCase() : "";
+  const supportsDemo = /\b(food|cuisine|cooking|meal|drink|beverage|cafe|coffee|market|restaurant)\b/i.test(brief);
+
+  if (!supportsDemo) {
+    return NextResponse.json(
+      {
+        provider: "Wikimedia Commons demo adapter",
+        demo: true,
+        references: [],
+        message: "The demo discovery adapter currently has food and market references only.",
+      },
+      { headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
   return NextResponse.json(
     {
       provider: "Wikimedia Commons demo adapter",
+      demo: true,
       references: [
         {
           id: "online-apple-crumble",
@@ -86,6 +103,6 @@ export async function POST() {
         },
       ],
     },
-    { headers: { "Cache-Control": "public, max-age=300" } }
+    { headers: { "Cache-Control": "no-store" } }
   );
 }

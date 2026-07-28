@@ -26,6 +26,7 @@ interface BoardActions {
   setConstraints: (constraints: CreativeConstraint[]) => void;
   setScoringWeights: (weights: ScoringWeights) => void;
   setResult: (result: AnalysisResult) => void;
+  clearResult: () => void;
   setUploadedFiles: (files: UploadedFile[]) => void;
   pinReference: (id: string) => void;
   unpinReference: (id: string) => void;
@@ -89,6 +90,8 @@ export const useBoardStore = create<Store>()(
           result: { ...result, references: mergedReferences },
         });
       },
+
+      clearResult: () => set({ result: null, uploadedFiles: [] }),
 
       setUploadedFiles: (uploadedFiles) => set({ uploadedFiles }),
 

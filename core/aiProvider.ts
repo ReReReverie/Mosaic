@@ -1,4 +1,6 @@
-export const AI_PROVIDERS = ["gemini", "openai", "anthropic"] as const;
+import { extractModelText } from "./structuredJson";
+
+export const AI_PROVIDERS = ["gemini", "openai", "anthropic", "groq", "ollama"] as const;
 
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 export type AiProviderSource = "default" | "session";
@@ -10,17 +12,33 @@ export interface AiProviderConfig {
   source: AiProviderSource;
 }
 
+export class AiProviderError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly retryAfterMs?: number
+  ) {
+    super(message);
+    this.name = "AiProviderError";
+  }
+}
+
 export const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
   gemini: "Google Gemini",
   openai: "OpenAI",
   anthropic: "Anthropic Claude",
+  groq: "Groq",
+  ollama: "Ollama (local)",
 };
 
 const DEFAULT_MODELS: Record<AiProvider, string> = {
-  gemini: "gemini-2.5-flash",
+  gemini: "gemini-2.0-flash",
   openai: "gpt-4o",
   anthropic: "claude-3-5-haiku-latest",
+  groq: "qwen/qwen3.6-27b",
+  ollama: "llama3.2",
 };
+const GROQ_STRUCTURED_MODEL = "qwen/qwen3.6-27b";
 
 const MAX_API_KEY_LENGTH = 512;
 const PROVIDER_TIMEOUT_MS = 30_000;
@@ -44,7 +62,11 @@ function modelFor(provider: AiProvider, source: AiProviderSource): string {
         ? process.env.GEMINI_MODEL
         : provider === "openai"
           ? process.env.OPENAI_MODEL
-          : process.env.ANTHROPIC_MODEL
+          : provider === "anthropic"
+            ? process.env.ANTHROPIC_MODEL
+            : provider === "groq"
+              ? process.env.GROQ_MODEL
+              : process.env.OLLAMA_MODEL
     );
     if (environmentModel) return environmentModel;
   }
@@ -54,6 +76,10 @@ function modelFor(provider: AiProvider, source: AiProviderSource): string {
 /**
  * Resolves the session override first, then the server's configured default.
  * The returned session key is request-scoped data and must never be persisted.
+ *
+ * Ollama runs locally and needs no real API key. When provider is "ollama" and
+ * no key is supplied, the placeholder "ollama" is used so the schema stays
+ * consistent; Ollama ignores the Authorization header entirely.
  */
 export function resolveAiProvider(override?: {
   provider?: string | null;
@@ -63,13 +89,16 @@ export function resolveAiProvider(override?: {
   const overrideProvider = readSecret(override?.provider ?? undefined);
 
   if (overrideKey || overrideProvider) {
-    if (!overrideKey || overrideKey.length < 10 || overrideKey.length > MAX_API_KEY_LENGTH) {
+    const provider = normalizeProvider(overrideProvider?.toLowerCase());
+    // Ollama is keyless — accept a missing or placeholder key
+    const isOllama = provider === "ollama";
+    const effectiveKey = overrideKey ?? (isOllama ? "ollama" : undefined);
+    if (!effectiveKey || (!isOllama && (effectiveKey.length < 10 || effectiveKey.length > MAX_API_KEY_LENGTH))) {
       throw new Error("The personal API key is invalid.");
     }
-    const provider = normalizeProvider(overrideProvider?.toLowerCase());
     return {
       provider,
-      apiKey: overrideKey,
+      apiKey: effectiveKey,
       model: modelFor(provider, "session"),
       source: "session",
     };
@@ -79,6 +108,9 @@ export function resolveAiProvider(override?: {
     ["gemini", readSecret(process.env.GEMINI_API_KEY)],
     ["openai", readSecret(process.env.OPENAI_API_KEY)],
     ["anthropic", readSecret(process.env.ANTHROPIC_API_KEY)],
+    ["groq", readSecret(process.env.GROQ_API_KEY)],
+    // Ollama is always available locally — use it as final fallback when enabled
+    ["ollama", readSecret(process.env.OLLAMA_ENABLED) ? "ollama" : undefined],
   ];
 
   const configured = defaultCredentials.find(([, key]) => key);
@@ -114,7 +146,14 @@ async function requestJson(
 
   const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
   if (!response.ok) {
-    throw new Error(`${providerName(provider)} rejected the request (${response.status}).`);
+    const providerMessage = payload && typeof payload.error === "object" && payload.error
+      ? (payload.error as { message?: unknown }).message
+      : undefined;
+    const message = typeof providerMessage === "string"
+      ? `${providerName(provider)} rejected the request (${response.status}): ${providerMessage}`
+      : `${providerName(provider)} rejected the request (${response.status}).`;
+    const retryAfter = Number(response.headers.get("retry-after"));
+    throw new AiProviderError(message, response.status, Number.isFinite(retryAfter) ? retryAfter * 1000 : undefined);
   }
   if (!payload) throw new Error(`${providerName(provider)} returned an empty response.`);
   return payload;
@@ -203,6 +242,49 @@ async function generateWithAnthropic(
   return text;
 }
 
+/**
+ * Shared implementation for OpenAI-compatible chat/completions endpoints.
+ * Used by both Groq and Ollama.
+ */
+async function generateWithOpenAiCompat(
+  provider: AiProvider,
+  baseUrl: string,
+  config: AiProviderConfig,
+  systemPrompt: string,
+  userPrompt: string
+): Promise<string> {
+  const payload = await requestJson(provider, `${baseUrl}/v1/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${config.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: provider === "groq" ? GROQ_STRUCTURED_MODEL : config.model,
+      messages: provider === "groq"
+        ? [{ role: "user", content: `${systemPrompt}\n\n${userPrompt}` }]
+        : [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+      ...(provider === "groq"
+        ? {
+            response_format: { type: "json_object" },
+            reasoning_effort: "none",
+            max_completion_tokens: 500,
+          }
+        : { max_tokens: 500 }),
+    }),
+  });
+
+  const choices = payload.choices;
+  if (!Array.isArray(choices)) throw new Error(`${providerName(provider)} returned no choices.`);
+  const message = (choices[0] as { message?: { content?: unknown; output_text?: unknown } } | undefined)?.message;
+  const text = extractModelText(message?.content ?? message?.output_text);
+  if (!text) throw new Error(`${providerName(provider)} returned no text.`);
+  return text;
+}
+
 export async function generateStructuredText(
   config: AiProviderConfig,
   systemPrompt: string,
@@ -210,5 +292,9 @@ export async function generateStructuredText(
 ): Promise<string> {
   if (config.provider === "gemini") return generateWithGemini(config, systemPrompt, userPrompt);
   if (config.provider === "openai") return generateWithOpenAI(config, systemPrompt, userPrompt);
-  return generateWithAnthropic(config, systemPrompt, userPrompt);
+  if (config.provider === "anthropic") return generateWithAnthropic(config, systemPrompt, userPrompt);
+  if (config.provider === "groq") return generateWithOpenAiCompat("groq", "https://api.groq.com/openai", config, systemPrompt, userPrompt);
+  // ollama
+  const ollamaBase = readSecret(process.env.OLLAMA_BASE_URL) ?? "http://localhost:11434";
+  return generateWithOpenAiCompat("ollama", ollamaBase, config, systemPrompt, userPrompt);
 }

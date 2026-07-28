@@ -123,8 +123,8 @@ export function ReferenceCard({ reference, onPin, onUnpin, onRemove, onMarkSimil
         {/* Color swatches */}
         {features.colors.length > 0 && (
           <div className="flex gap-1.5">
-            {features.colors.slice(0, 5).map((c) => (
-              <Tooltip key={c.hex}>
+            {features.colors.slice(0, 5).map((c, index) => (
+              <Tooltip key={`${file.id}-${c.hex}-${index}`}>
                 <TooltipTrigger>
                   <span
                     className="inline-block h-4 w-4 cursor-default rounded-full"

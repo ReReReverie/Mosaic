@@ -1,5 +1,5 @@
 import type { ReferenceFile, ReferenceFeatures, ReferenceAnalyzer } from "../types";
-import { buildColorSamples, getOrientation, getAspectRatio } from "./utils";
+import { buildColorSamples, getOrientation, getAspectRatio, rgbToHsl } from "./utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SVG Analyzer — extracts fill/stroke colors and viewBox dimensions
@@ -98,11 +98,40 @@ export const svgAnalyzer: ReferenceAnalyzer = {
         .split(/\W+/)
         .filter((w) => w.length > 2);
 
+      // Derive brightness and saturation from the extracted colour palette.
+      // SVG colours are always exact (no JPEG artefacts), so this is accurate.
+      let brightness = 0.5;
+      let saturation = 0.1;
+      if (rgbColors.length > 0) {
+        let totalL = 0;
+        let totalS = 0;
+        for (const [r, g, b] of rgbColors) {
+          const [, s, l] = rgbToHsl(r, g, b);
+          totalL += l;
+          totalS += s;
+        }
+        brightness = totalL / rgbColors.length;
+        saturation = totalS / rgbColors.length;
+      }
+
+      // Edge density for SVG: proxy from colour count diversity.
+      // Many distinct colours → busy vector artwork; few → minimal/flat icon.
+      const edgeDensity = Math.min(1, rgbColors.length / 20);
+
+      // Contrast proxy: spread of luminances across palette colours
+      let contrast = 0.5;
+      if (rgbColors.length > 1) {
+        const lums = rgbColors.map(([r, g, b]) => rgbToHsl(r, g, b)[2]);
+        const minL = Math.min(...lums);
+        const maxL = Math.max(...lums);
+        contrast = maxL - minL; // 0–1 already
+      }
+
       return {
         colors,
-        brightness: 0.5, // SVG brightness is not pixel-computable without rasterization
-        saturation: colors.length > 0 ? 0.5 : 0.1,
-        contrast: 0.5,
+        brightness,
+        saturation,
+        contrast,
         aspectRatio: getAspectRatio(w, h),
         orientation: getOrientation(w, h),
         subjectPlacement: "center",
@@ -112,6 +141,7 @@ export const svgAnalyzer: ReferenceAnalyzer = {
         widthPx: w,
         heightPx: h,
         isIllustrative: true,
+        edgeDensity,
       };
     } catch {
       return {};

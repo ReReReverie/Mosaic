@@ -210,5 +210,7 @@ export function defaultFeatures(): Partial<ReferenceFeatures> {
     widthPx: 0,
     heightPx: 0,
     isIllustrative: false,
+    edgeDensity: 0.3,
+    analysisSource: "deterministic",
   };
 }

@@ -15,7 +15,7 @@ import { analyzeStyleDNA } from "./styleDNA";
 import { analyzeDiversity } from "./diversityAnalyzer";
 import { generatePalettes } from "./paletteEngine";
 import { checkAccessibility } from "./accessibilityChecker";
-import type { AiProviderConfig } from "./aiProvider";
+import { AiProviderError, type AiProviderConfig } from "./aiProvider";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Analysis Orchestrator
@@ -30,6 +30,13 @@ export interface OrchestratorInput {
   pinnedIds?: string[];
   removedIds?: string[];
   constraints?: CreativeConstraint[];
+  /** Optional multimodal enrichment. Failures are reported and fall back. */
+  analyzeVision?: (
+    file: ReferenceFile,
+    buffer: Buffer,
+    brief: string,
+    features: import("./types").ReferenceFeatures
+  ) => Promise<Partial<import("./types").ReferenceFeatures> | null>;
   preSkippedFiles?: SkippedFile[];
   /**
    * Function that reads a file's contents by id and path.
@@ -39,7 +46,26 @@ export interface OrchestratorInput {
 }
 
 const BATCH_SIZE = 10;
+const DEFAULT_AI_MAX_CONCURRENCY = 4;
+const MAX_AI_CONCURRENCY = 4;
 const TOP_REFERENCES = 12;
+
+export function getAiMaxConcurrency(): number {
+  const configured = process.env.MOSAIC_AI_MAX_CONCURRENCY?.trim();
+  if (!configured) return DEFAULT_AI_MAX_CONCURRENCY;
+
+  const parsed = Number(configured);
+  if (!Number.isFinite(parsed)) return DEFAULT_AI_MAX_CONCURRENCY;
+
+  return Math.min(MAX_AI_CONCURRENCY, Math.max(1, Math.floor(parsed)));
+}
+
+function isRateLimitError(error: unknown): boolean {
+  if (error instanceof AiProviderError) return error.status === 429;
+  if (typeof error !== "object" || error === null || !("status" in error)) return false;
+
+  return (error as { status?: unknown }).status === 429;
+}
 
 export async function* runAnalysis(
   input: OrchestratorInput
@@ -52,6 +78,7 @@ export async function* runAnalysis(
     pinnedIds = [],
     removedIds = [],
     constraints = [],
+    analyzeVision,
     preSkippedFiles = [],
     readFile,
   } = input;
@@ -81,37 +108,120 @@ export async function* runAnalysis(
 
   const totalFiles = files.length;
   let processed = 0;
+  let aiRequested = 0;
+  let aiVisionCompleted = 0;
+  let aiTextFallback = 0;
+  let aiFailed = 0;
+  let aiSkipped = 0;
+  const aiErrors: string[] = [];
 
-  for (let i = 0; i < files.length; i += BATCH_SIZE) {
-    const batch = files.slice(i, i + BATCH_SIZE);
-    await Promise.all(
-      batch.map(async (file) => {
-        try {
-          const buffer = await readFile(file);
-          const { features, skipped } = await analyzeFile(file, buffer);
-          if (skipped) {
-            skippedFiles.push(skipped);
-          } else {
-            featuresMap.set(file.id, features);
+  type FileAnalysisOutcome = { rateLimited: boolean };
+  const analyzeOne = async (file: ReferenceFile): Promise<FileAnalysisOutcome> => {
+    let rateLimited = false;
+    try {
+      const buffer = await readFile(file);
+      const { features, skipped } = await analyzeFile(file, buffer);
+      if (skipped) {
+        skippedFiles.push(skipped);
+      } else {
+        let enrichedFeatures = features;
+        if (analyzeVision && file.mimeType.startsWith("image/")) {
+          aiRequested += 1;
+          try {
+            const semanticFeatures = await analyzeVision(file, buffer, brief, features);
+            if (semanticFeatures) {
+              enrichedFeatures = {
+                ...features,
+                ...semanticFeatures,
+                analysisSource: semanticFeatures.analysisSource ?? "mixed",
+              };
+              if (semanticFeatures.analysisSource === "ai-text") aiTextFallback += 1;
+              else aiVisionCompleted += 1;
+            } else {
+              aiSkipped += 1;
+            }
+          } catch (error) {
+            rateLimited = isRateLimitError(error);
+            aiFailed += 1;
+            if (aiErrors.length < 3) {
+              const details = error instanceof Error ? error.message : "Unknown AI provider error.";
+              aiErrors.push(`${file.filename}: ${details.slice(0, 240)}`);
+            }
           }
-        } catch (err) {
-          skippedFiles.push({
-            path: file.path,
-            reason: "analysis failed",
-            details: err instanceof Error ? err.message : String(err),
-          });
         }
-        processed++;
-      })
-    );
+        featuresMap.set(file.id, enrichedFeatures);
+      }
+    } catch (err) {
+      skippedFiles.push({
+        path: file.path,
+        reason: "analysis failed",
+        details: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return { rateLimited };
+  };
 
-    const progress =
-      totalFiles === 0 ? 65 : 5 + Math.round((processed / totalFiles) * 60);
-    yield {
-      type: "file-analysis-progress",
-      progress,
-      message: `Analysed ${processed} / ${totalFiles} files…`,
+  const rankAvailableReferences = () => rankReferences(
+    files,
+    featuresMap,
+    creativeDirection,
+    weights,
+    new Set(pinnedIds),
+    new Set(removedIds),
+    constraints
+  );
+
+  if (!analyzeVision) {
+    for (let i = 0; i < files.length; i += BATCH_SIZE) {
+      const batch = files.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(async (file) => {
+        await analyzeOne(file);
+        processed += 1;
+      }));
+
+      const progress =
+        totalFiles === 0 ? 65 : 5 + Math.round((processed / totalFiles) * 60);
+      yield {
+        type: "file-analysis-progress",
+        progress,
+        message: `Analysed ${processed} / ${totalFiles} files…`,
+        partialReferences: rankAvailableReferences(),
+      };
+    }
+  } else {
+    let nextIndex = 0;
+    let targetConcurrency = getAiMaxConcurrency();
+    const inFlight = new Map<number, Promise<{ index: number; outcome: FileAnalysisOutcome }>>();
+
+    const startNext = () => {
+      while (nextIndex < files.length && inFlight.size < targetConcurrency) {
+        const index = nextIndex;
+        nextIndex += 1;
+        const task = analyzeOne(files[index]).then((outcome) => ({ index, outcome }));
+        inFlight.set(index, task);
+      }
     };
+
+    startNext();
+    while (inFlight.size > 0) {
+      const completed = await Promise.race(inFlight.values());
+      inFlight.delete(completed.index);
+      processed += 1;
+
+      if (completed.outcome.rateLimited) {
+        targetConcurrency = Math.max(1, Math.ceil(targetConcurrency / 2));
+      }
+      startNext();
+
+      const progress =
+        totalFiles === 0 ? 65 : 5 + Math.round((processed / totalFiles) * 60);
+      yield {
+        type: "file-analysis-progress",
+        progress,
+        message: `Analysed ${processed} / ${totalFiles} files…`,
+        partialReferences: rankAvailableReferences(),
+      };
+    }
   }
 
   // ── 3. Rank references ────────────────────────────────────────────────────
@@ -127,7 +237,8 @@ export async function* runAnalysis(
     creativeDirection,
     weights,
     new Set(pinnedIds),
-    new Set(removedIds)
+    new Set(removedIds),
+    constraints
   );
 
   yield {
@@ -188,6 +299,16 @@ export async function* runAnalysis(
     palette,
     accessibilityFindings,
     skippedFiles,
+    aiAnalysis: {
+      enabled: Boolean(aiProvider && analyzeVision),
+      provider: aiProvider?.provider,
+      requested: aiRequested,
+      visionCompleted: aiVisionCompleted,
+      textFallback: aiTextFallback,
+      failed: aiFailed,
+      skipped: aiSkipped,
+      errors: aiErrors,
+    },
     scoringWeights: weights,
     analyzedAt: Date.now(),
   };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { interpretDeterministic } from "./promptInterpreter";
+import { expandMoodTerms, interpretDeterministic, normalizeProviderDirection, parseProviderDirection } from "./promptInterpreter";
 
 describe("interpretDeterministic", () => {
   it("extracts subject from brief", () => {
@@ -90,5 +90,64 @@ describe("interpretDeterministic", () => {
   it("returns constraints as empty array", () => {
     const result = interpretDeterministic("Any brief.");
     expect(result.constraints).toHaveLength(0);
+  });
+
+  it("recognizes awe-inspiring intent without inventing an output format", () => {
+    const result = interpretDeterministic("Give me something awe inspiring.");
+    expect(result.mood).toContain("awe-inspiring");
+    expect(result.mood).toContain("wonder");
+    expect(result.mood).toContain("uplifting");
+    expect(result.mood).toContain("epic");
+    expect(result.formats).toHaveLength(0);
+  });
+
+  it("maps a wider inspirational vocabulary to related mood signals", () => {
+    const result = interpretDeterministic("Create a hopeful, visionary and breathtaking direction.");
+    expect(result.mood).toEqual(expect.arrayContaining([
+      "hopeful", "visionary", "breathtaking", "uplifting", "aspirational", "striking",
+    ]));
+  });
+
+  it("keeps dramatic distinct from dark while expanding it", () => {
+    const result = interpretDeterministic("Make it dramatic, powerful and moving.");
+    expect(result.mood).toEqual(expect.arrayContaining(["dramatic", "powerful", "inspiring", "striking"]));
+    expect(result.mood).not.toContain("dark");
+  });
+
+  it("supports independent mood families beyond inspiration", () => {
+    const result = interpretDeterministic(
+      "Make the campaign mysterious, melancholic, luxurious, rebellious and futuristic."
+    );
+    expect(result.mood).toEqual(expect.arrayContaining([
+      "mysterious", "melancholic", "luxurious", "rebellious", "futuristic",
+    ]));
+    expect(result.mood).not.toContain("awe-inspiring");
+  });
+
+  it("keeps mood expansion bounded", () => {
+    expect(expandMoodTerms(["awe-inspiring", "inspiring"]).length).toBeLessThanOrEqual(10);
+  });
+
+  it("normalizes provider synonyms and rejects invented formats", () => {
+    const result = normalizeProviderDirection({
+      mood: ["epic"],
+      style: ["cinematic"],
+      formats: ["website"],
+      subject: ["visual subject"],
+    }, "Give me something awe inspiring.");
+
+    expect(result.mood).toContain("epic");
+    expect(result.style).toContain("cinematic");
+    expect(result.mood).toContain("awe-inspiring");
+    expect(result.formats).toHaveLength(0);
+  });
+
+  it("parses reasoning-model output before the provider JSON", () => {
+    const result = parseProviderDirection(
+      '<think>Map the brief to visual signals.</think>\n{"subject":["food"],"mood":["dramatic"],"style":["editorial"],"audience":[],"colors":[],"formats":[],"ambiguities":[]}',
+      "A dramatic editorial food image"
+    );
+    expect(result.subject).toContain("food");
+    expect(result.mood).toContain("dramatic");
   });
 });

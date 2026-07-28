@@ -7,9 +7,11 @@ import {
   COLOR_DIRECTION_TERMS,
   FORMAT_TERMS,
   CONFLICTING_PAIRS,
+  MOOD_EXPANSIONS,
 } from "./keywords";
 import type { AiProviderConfig } from "./aiProvider";
 import { generateStructuredText } from "./aiProvider";
+import { parseStructuredObject } from "./structuredJson";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Prompt Interpreter
@@ -26,7 +28,8 @@ function matchTerms(
   const found = new Set<string>();
   for (const [term, canonical] of Object.entries(dict)) {
     // Word-boundary match — avoids "food" matching "seafood" unexpectedly
-    const pattern = new RegExp(`\\b${term.replace("-", "\\-")}\\b`, "i");
+    const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(`\\b${escapedTerm}\\b`, "i");
     if (pattern.test(text)) {
       found.add(canonical);
     }
@@ -56,6 +59,15 @@ function detectAmbiguities(text: string): string[] {
   return ambiguities;
 }
 
+/** Expand direct mood language into a bounded set of related creative signals. */
+export function expandMoodTerms(moods: string[]): string[] {
+  const expanded = [...moods];
+  for (const mood of moods) {
+    expanded.push(...(MOOD_EXPANSIONS[mood] ?? []));
+  }
+  return [...new Set(expanded)].slice(0, 10);
+}
+
 /**
  * Deterministic prompt interpretation using keyword dictionaries.
  * No external dependencies — works without an API key.
@@ -66,7 +78,7 @@ export function interpretDeterministic(brief: string): CreativeDirection {
   return {
     subject: matchTerms(text, SUBJECT_TERMS),
     audience: matchTerms(text, AUDIENCE_TERMS),
-    mood: matchTerms(text, MOOD_TERMS),
+    mood: expandMoodTerms(matchTerms(text, MOOD_TERMS)),
     style: matchTerms(text, STYLE_TERMS),
     colors: matchTerms(text, COLOR_DIRECTION_TERMS),
     formats: matchTerms(text, FORMAT_TERMS),
@@ -93,39 +105,63 @@ Return ONLY a valid JSON object matching this schema exactly — no markdown, no
 }
 - subject: visual subjects (food, people, architecture, nature, products, etc.)
 - audience: target audience descriptors
-- mood: emotional tone (warm, calm, energetic, serious, playful, dark, bright, etc.)
+- mood: emotional tone and related signals (warm, calm, energetic, awe-inspiring, wonder, uplifting, hopeful, epic, dramatic, etc.)
 - style: visual style (editorial, minimalist, experimental, retro, handmade, etc.)
 - colors: color direction (warm, cool, muted, vibrant, monochrome, pastel, etc.)
-- formats: output format (poster, logo, website, social, print, screen, etc.)
+- formats: output format (poster, logo, website, social, print, screen, etc.); return [] unless the brief explicitly names a format
 - constraints: always empty array — do not add constraints
 - ambiguities: any conflicting or unclear signals in the brief as plain strings
 Use only values appropriate for the brief. Keep arrays concise (max 4 items each).`;
 
-function stringList(value: unknown, field: string): string[] {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
-    throw new Error("AI output is missing a valid " + field + " array.");
-  }
-  return value.slice(0, 4) as string[];
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 4);
 }
 
-function parseProviderDirection(content: string): CreativeDirection {
-  const trimmed = content.trim();
-  const fence = String.fromCharCode(96).repeat(3);
-  const normalized = trimmed.startsWith(fence)
-    ? trimmed.split(/\r?\n/).slice(1, -1).join("\n").trim()
-    : trimmed;
-  const parsed = JSON.parse(normalized) as Partial<CreativeDirection>;
+function canonicalizeList(
+  values: string[],
+  dictionary: Record<string, string>,
+  fallback: string[] = []
+): string[] {
+  const normalized = values.flatMap((value) => matchTerms(value.toLowerCase(), dictionary));
+  return [...new Set([...normalized, ...fallback])].slice(0, 4);
+}
+
+/**
+ * Normalize provider output against the same vocabulary used by the
+ * deterministic interpreter. This prevents a provider from inventing a
+ * format (for example "website") that the brief never requested.
+ */
+export function normalizeProviderDirection(
+  parsed: Partial<CreativeDirection>,
+  brief: string
+): CreativeDirection {
+  const deterministic = interpretDeterministic(brief);
+  const explicitFormats = new Set(deterministic.formats);
+  const providerFormats = canonicalizeList(stringList(parsed.formats), FORMAT_TERMS)
+    .filter((format) => explicitFormats.has(format));
+  const providerAmbiguities = stringList(parsed.ambiguities);
 
   return {
-    subject: stringList(parsed.subject, "subject"),
-    audience: stringList(parsed.audience, "audience"),
-    mood: stringList(parsed.mood, "mood"),
-    style: stringList(parsed.style, "style"),
-    colors: stringList(parsed.colors, "colors"),
-    formats: stringList(parsed.formats, "formats"),
+    subject: canonicalizeList(stringList(parsed.subject), SUBJECT_TERMS, deterministic.subject),
+    audience: canonicalizeList(stringList(parsed.audience), AUDIENCE_TERMS, deterministic.audience),
+    mood: expandMoodTerms(canonicalizeList(stringList(parsed.mood), MOOD_TERMS, deterministic.mood)),
+    style: canonicalizeList(stringList(parsed.style), STYLE_TERMS, deterministic.style),
+    colors: canonicalizeList(stringList(parsed.colors), COLOR_DIRECTION_TERMS, deterministic.colors),
+    formats: [...new Set([...providerFormats, ...explicitFormats])].slice(0, 4),
     constraints: [],
-    ambiguities: stringList(parsed.ambiguities, "ambiguities"),
+    ambiguities: [...new Set([...deterministic.ambiguities, ...providerAmbiguities])].slice(0, 4),
   };
+}
+
+export function parseProviderDirection(content: string, brief: string): CreativeDirection {
+  const parsed = parseStructuredObject<Partial<CreativeDirection>>(content);
+
+  return normalizeProviderDirection(parsed, brief);
 }
 
 async function interpretWithProvider(
@@ -133,7 +169,7 @@ async function interpretWithProvider(
   provider: AiProviderConfig
 ): Promise<CreativeDirection> {
   const content = await generateStructuredText(provider, SYSTEM_PROMPT, brief);
-  return parseProviderDirection(content);
+  return parseProviderDirection(content, brief);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -142,7 +178,8 @@ async function interpretWithProvider(
 
 /**
  * Interpret a plain-English brief into a structured CreativeDirection.
- * Uses GPT-4o when an API key is provided, falls back to deterministic on any error.
+ * Uses the configured provider when available, falling back to deterministic
+ * interpretation on hosted-provider errors.
  */
 export async function interpretPrompt(
   brief: string,

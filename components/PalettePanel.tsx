@@ -11,10 +11,10 @@ function PaletteRow({ palette }: { palette: Palette }) {
     <div className="flex flex-col gap-2">
       <span className="t-label">{palette.name}</span>
       <div className="flex gap-2">
-        {palette.colors.map((c) => {
+        {palette.colors.map((c, index) => {
           const hasFail = c.contrastWarnings.some((w) => w.failsAA);
           return (
-            <Tooltip key={c.hex}>
+            <Tooltip key={`${palette.name}-${c.hex}-${index}`}>
               <TooltipTrigger>
                 <div className="flex flex-col items-center gap-1 cursor-default">
                   <span

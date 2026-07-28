@@ -4,6 +4,7 @@ import type {
   CreativeConstraint,
   ProgressEvent,
   ReferenceFile,
+  ReferenceFeatures,
   ScoringWeights,
 } from "@/core/types";
 import { DEFAULT_SCORING_WEIGHTS } from "@/core/types";
@@ -13,11 +14,12 @@ import { scanFiles, type BrowserFileInput } from "@/core/scanner";
 import { getRequestKey, consumeRateLimit } from "@/lib/rateLimit";
 import { saveAnalysisSession } from "@/lib/sessionStore";
 import { resolveAiProvider } from "@/core/aiProvider";
+import { analyzeReferenceWithAi, isVisionEnabled, visionFileLimit } from "@/core/visionProvider";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const MAX_FILES = 200;
+const MAX_FILES = 50;
 const MAX_TOTAL_BYTES = 250 * 1024 * 1024;
 const MAX_BRIEF_LENGTH = 2_000;
 const CONSTRAINT_TYPES = new Set<CreativeConstraint["type"]>([
@@ -214,6 +216,14 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
+        const registeredThumbnailIds = new Set<string>();
+        const registerNewThumbnails = async (references: NonNullable<ProgressEvent["partialReferences"]>) => {
+          const newReferences = references.filter((reference) => !registeredThumbnailIds.has(reference.file.id));
+          if (newReferences.length === 0) return;
+          await registerThumbnails(newReferences, fileBuffers);
+          newReferences.forEach((reference) => registeredThumbnailIds.add(reference.file.id));
+        };
+
         try {
           const generator = runAnalysis({
             files: referenceFiles,
@@ -224,15 +234,28 @@ export async function POST(req: NextRequest) {
             removedIds,
             constraints,
             preSkippedFiles: skippedFiles,
+            analyzeVision: isVisionEnabled() && aiProvider
+              ? (() => {
+                  let used = 0;
+                  return async (_file: ReferenceFile, buffer: Buffer, visionBrief: string, features: ReferenceFeatures) => {
+                    if (used >= visionFileLimit()) return null;
+                    used += 1;
+                    return analyzeReferenceWithAi(aiProvider!, _file, buffer, features, visionBrief);
+                  };
+                })()
+              : undefined,
             readFile: async (file) => fileBuffers.get(file.id) ?? Buffer.alloc(0),
           });
 
           for await (const event of generator) {
+            if (event.partialReferences) {
+              await registerNewThumbnails(event.partialReferences);
+            }
             if (event.type === "done" && event.result) {
               await saveAnalysisSession(event.result);
-              await registerThumbnails(event.result.references, fileBuffers);
+              await registerNewThumbnails(event.result.references);
             }
-            controller.enqueue(encoder.encode(`${JSON.stringify(event)}\\n`));
+            controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
           }
         } catch (err) {
           const errorEvent: ProgressEvent = {
@@ -241,7 +264,7 @@ export async function POST(req: NextRequest) {
             message: "Analysis failed.",
             error: err instanceof Error ? err.message : "Unexpected analysis error.",
           };
-          controller.enqueue(encoder.encode(`${JSON.stringify(errorEvent)}\\n`));
+          controller.enqueue(encoder.encode(`${JSON.stringify(errorEvent)}\n`));
         } finally {
           controller.close();
         }

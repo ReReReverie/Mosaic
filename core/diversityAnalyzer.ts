@@ -48,8 +48,10 @@ function buildVector(ref: RankedReference): DiversityVector {
   }
   const warmCool = f.colors.length > 0 ? totalCool / f.colors.length : 0.5;
 
-  // densityScore: contrast as a proxy for visual density
-  const densityScore = f.contrast;
+  // densityScore: blend of contrast and edge density for visual busyness
+  const densityScore = f.edgeDensity != null
+    ? f.edgeDensity * 0.6 + f.contrast * 0.4
+    : f.contrast;
 
   // asymmetry: non-center placement = more asymmetrical
   const asymmetry = f.subjectPlacement === "center" ? 0 : 0.8;

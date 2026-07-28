@@ -65,7 +65,8 @@ npm run dev
 
 Open [http://localhost:9000](http://localhost:9000) in your browser. Enter a
 brief, choose a folder of reference files, and run the analysis. Supported
-inputs include common image files, PDFs, SVGs, text files, and documents.
+inputs include common image files, PDFs, SVGs, text files, and documents. A
+reference folder is limited to 50 files per analysis.
 
 ### Quick-start command list
 
@@ -87,26 +88,36 @@ analysis path is enabled when no hosted key is configured:
 
 ```dotenv
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-2.0-flash
 # Optional server-side fallback providers
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4o
 ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL=claude-3-5-haiku-latest
+GROQ_API_KEY=
+GROQ_MODEL=qwen/qwen3.6-27b
+OLLAMA_ENABLED=
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2
 DATABASE_URL=
+MOSAIC_VISION_ENABLED=true
+MOSAIC_VISION_MAX_FILES=50
+# Maximum concurrent AI reference enrichments (1-4). Default: 4.
+MOSAIC_AI_MAX_CONCURRENCY=4
 ```
 
 For the hosted Vercel deployment, set `GEMINI_API_KEY` in Vercel's server-only
 environment variables. Gemini is the default provider. `OPENAI_API_KEY` is
 retained as a backwards-compatible fallback for existing deployments; the
-Anthropic variables are available for intentional server-side configuration.
+Anthropic, Groq, and Ollama variables are available for intentional server-side
+configuration.
 
 ### Personal API keys (session-only)
 
 The Mosaic UI lets a user temporarily override the hosted Gemini provider with
-their own key. The currently supported providers are Google Gemini, OpenAI, and
-Anthropic. Other providers require a server-side provider adapter; arbitrary
-base URLs are not accepted.
+their own key. The currently supported providers are Google Gemini, OpenAI,
+Anthropic Claude, Groq, and Ollama. Ollama runs locally and requires no API
+key — select it from the provider dropdown and leave the key field empty.
 
 To use a personal key:
 
@@ -163,7 +174,7 @@ optional provider variables unset unless you intentionally need server-side
 fallbacks. The analysis route uses the Node.js runtime for image and PDF
 processing.
 
-For a hackathon demo, use a small reference folder. Uploaded files are sent to
+For a hackathon demo, use a reference folder with no more than 50 files. Uploaded files are sent to
 the analysis endpoint for the active session and are not durable file storage;
 cross-device file persistence would require object storage such as Vercel Blob,
 S3, or R2.
@@ -225,8 +236,62 @@ Then open [http://localhost:9000](http://localhost:9000).
 
 When `GEMINI_API_KEY` is set, Gemini improves prompt parsing and explanation
 quality. OpenAI and Anthropic are also supported as session-only personal
-overrides from the UI. The app remains fully functional without a key using
-deterministic fallbacks.
+overrides from the UI. When a provider is configured, AI also analyzes up to
+`MOSAIC_VISION_MAX_FILES` references (50 by default, enough for the normal
+board size): Gemini/OpenAI/Groq vision-capable models
+receive the image, while text-only models receive the measured visual evidence
+and metadata. Set `MOSAIC_VISION_ENABLED=false` to keep analysis local. Provider
+failures always fall back to deterministic pixel and metadata analysis. Match
+cards label whether their evidence is semantic, metadata-based, visual, or
+curated demo discovery.
+
+AI reference enrichment runs up to four independent provider requests at once
+by default and refills a slot as soon as an image completes. Set
+`MOSAIC_AI_MAX_CONCURRENCY` to a value from 1 to 4 to tune throughput. If the
+provider exhausts its rate-limit retries, the scheduler backs off for the
+remaining images and those images keep their deterministic fallback analysis.
+
+### Free image-capable API options
+
+“Free” means a free tier or local inference, not unlimited production usage:
+
+- **Google Gemini API / AI Studio** — multimodal image input with a free tier
+  subject to model and regional limits. See [image understanding](https://ai.google.dev/gemini-api/docs/image-understanding)
+  and [billing](https://ai.google.dev/gemini-api/docs/billing).
+- **OpenRouter** — accepts URL or base64 image inputs; `openrouter/free`
+  automatically filters for currently available free models that support image
+  understanding. Free models have low and changing rate limits. See [image inputs](https://openrouter.ai/docs/guides/overview/multimodal/image-understanding)
+  and the [free router](https://openrouter.ai/docs/guides/routing/routers/free-router).
+- **Groq** — has a free plan and supports image understanding with a
+  vision-capable model such as `qwen/qwen3.6-27b`; the default in this project
+  is configured accordingly. See [Groq vision](https://console.groq.com/docs/vision)
+  and [rate limits](https://console.groq.com/docs/rate-limits).
+- **Ollama** — free local inference with no hosted API key; install a vision
+  model such as LLaVA and send images through its local API. See [Ollama vision models](https://ollama.com/blog/vision-models).
+
+For this app, Gemini is the simplest hosted default, Groq is a fast hosted
+alternative, OpenRouter is useful when you want to swap free models, and Ollama
+is the privacy-first option. Never put provider keys in `NEXT_PUBLIC_` variables
+or commit them to the repository.
+
+## Limitations
+
+- Each analysis accepts up to 50 files, with a combined upload limit of 250 MB
+  and a 50 MB limit per file.
+- Creative briefs must contain between 5 and 2,000 characters.
+- Video files and unsupported formats are skipped during scanning.
+- PDF text analysis works without external tools, but PDF thumbnails require
+  GraphicsMagick or ImageMagick.
+- AI enrichment is optional and provider-dependent. It analyzes up to
+  `MOSAIC_VISION_MAX_FILES` references and uses up to four concurrent requests
+  by default.
+- Provider rate limits can trigger retries, reduced concurrency, and
+  deterministic fallback analysis. AI results are advisory and may vary by
+  provider or model; paid APIs can improve availability but do not guarantee
+  fixed response times.
+- Uploaded source files are ephemeral. Cross-device persistence and Neon-backed
+  session restoration are not currently available.
+- The shared hosted demo may have variable response times and provider quotas.
 
 ## Notes on PDF Thumbnails
 
