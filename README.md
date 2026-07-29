@@ -4,6 +4,8 @@ Mosaic is an analytical AI partner for graphic and visual designers. Enter a cre
 
 Repository: [ReReReverie/Mosaic.git](https://github.com/ReReReverie/Mosaic.git)
 
+Hosted website: [Mosaic](https://mosaic-tau-livid.vercel.app/)
+
 ## Project leadership
 
 - **Lead developer / team leader:** Lanz Martene
