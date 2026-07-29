@@ -99,15 +99,14 @@ key for the most complete and current results. Optional provider keys are
 loaded from `.env.local` by Docker:
 
 ```dotenv
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.0-flash
-# Optional server-side fallback providers
+# Preferred hosted provider.
+GROQ_API_KEY=
+GROQ_MODEL=qwen/qwen3.6-27b
+# Optional server-side providers
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4o
 ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL=claude-3-5-haiku-latest
-GROQ_API_KEY=
-GROQ_MODEL=qwen/qwen3.6-27b
 REPLICATE_API_TOKEN=
 REPLICATE_MODEL=sai88uk/minicpm-v-45-v9:5f9e86550c3540aab9292e0cae22f71bb75724be3c9bb72ebf0798d028f0f27b
 OLLAMA_ENABLED=
@@ -119,21 +118,22 @@ MOSAIC_VISION_MAX_FILES=50
 MOSAIC_AI_MAX_CONCURRENCY=4
 ```
 
-Gemini remains the first default when `GEMINI_API_KEY` is configured. The
-Anthropic, Groq, Replicate, and Ollama variables are available for intentional
-local Docker configuration.
+Groq is the preferred default when `GROQ_API_KEY` is configured. Gemini is
+temporarily hidden and is not included in the sample environment configuration.
+The OpenAI, Anthropic, Replicate, and Ollama variables remain available for
+intentional local Docker configuration.
 
 ### Personal API keys (session-only)
 
 The Mosaic UI lets a user temporarily override the configured provider with
-their own key. The currently supported providers are Google Gemini, OpenAI,
-Anthropic Claude, Groq, Replicate, and Ollama. Ollama runs locally and requires
-no API key — select it from the provider dropdown and leave the key field empty.
+their own key. The currently exposed providers are Groq, OpenAI, Anthropic
+Claude, Replicate, and Ollama. Ollama runs locally and requires no API key —
+select it from the provider dropdown and leave the key field empty.
 
 To use a personal key:
 
 1. Open **Use your own engine** in the left sidebar.
-2. Select Google Gemini, OpenAI, Anthropic, Groq, Replicate, or Ollama.
+2. Select Groq, OpenAI, Anthropic, Replicate, or Ollama.
 3. Paste the provider key and run an analysis.
 4. Clear the key or start a new session when finished.
 
@@ -200,7 +200,10 @@ docker compose run --rm app npm run build
 
 Copy `.env.example` to `.env.local` for local provider configuration. It is
 ignored by Git and loaded only into the container. If Ollama runs on the host,
-use `OLLAMA_BASE_URL=http://host.docker.internal:11434` inside `.env.local`.
+keep `OLLAMA_BASE_URL=http://host.docker.internal:11434` inside `.env.local`,
+install the selected model with `ollama pull llama3.2-vision`, and make sure
+the Ollama service is running before selecting Ollama in Mosaic. Ollama is not
+included in the Mosaic Docker image.
 Docker Desktop still uses host disk and memory for its managed images and
 volumes, but application packages and native tools are not installed globally
 on Windows.
@@ -249,11 +252,12 @@ on Windows.
 
 ## AI Enhancement
 
-When `GEMINI_API_KEY` is set, Gemini improves prompt parsing and explanation
-quality. OpenAI, Anthropic, Groq, Replicate, and Ollama are also supported as session-only personal
-overrides from the UI. When a provider is configured, AI also analyzes up to
+When `GROQ_API_KEY` is set, Groq is the preferred provider for prompt parsing,
+explanation quality, and reference enrichment. OpenAI, Anthropic, Replicate,
+and Ollama are also supported as session-only personal overrides from the UI.
+When a provider is configured, AI also analyzes up to
 `MOSAIC_VISION_MAX_FILES` references (50 by default, enough for the normal
-board size): Gemini/OpenAI/Groq/Ollama/Replicate vision-capable models
+board size): OpenAI/Groq/Ollama/Replicate vision-capable models
 receive the image, while text-only models receive the measured visual evidence
 and metadata. Set `MOSAIC_VISION_ENABLED=false` to keep analysis local. Provider
 failures always fall back to deterministic pixel and metadata analysis. Match
@@ -283,9 +287,6 @@ available.
 
 “Free” means a free tier or local inference, not unlimited production usage:
 
-- **Google Gemini API / AI Studio** — multimodal image input with a free tier
-  subject to model and regional limits. See [image understanding](https://ai.google.dev/gemini-api/docs/image-understanding)
-  and [billing](https://ai.google.dev/gemini-api/docs/billing).
 - **OpenRouter** — accepts URL or base64 image inputs; `openrouter/free`
   automatically filters for currently available free models that support image
   understanding. Free models have low and changing rate limits. See [image inputs](https://openrouter.ai/docs/guides/overview/multimodal/image-understanding)
@@ -301,10 +302,9 @@ available.
   model such as [`llama3.2-vision`](https://ollama.com/library/llama3.2-vision)
   and Mosaic will send each normalized image through Ollama's local vision API.
 
-For this app, Gemini is the simplest hosted default, Groq is a fast hosted
-alternative, OpenRouter is useful when you want to swap free models, and Ollama
-is the privacy-first option. Never put provider keys in `NEXT_PUBLIC_` variables
-or commit them to the repository.
+For this app, Groq is the preferred hosted default, OpenRouter is useful when you
+want to swap free models, and Ollama is the privacy-first option. Never put
+provider keys in `NEXT_PUBLIC_` variables or commit them to the repository.
 
 ## Limitations
 

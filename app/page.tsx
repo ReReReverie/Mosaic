@@ -236,10 +236,9 @@ function InsightBar({ label, value }: { label: string; value: number }) {
 }
 
 const AI_PROVIDER_OPTIONS: Array<{ value: AiProvider; label: string }> = [
-  { value: "gemini", label: "Google Gemini" },
+  { value: "groq", label: "Groq" },
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic Claude" },
-  { value: "groq", label: "Groq" },
   { value: "ollama", label: "Ollama (local)" },
   { value: "replicate", label: "Replicate (MiniCPM-V)" },
 ];
@@ -332,7 +331,7 @@ export default function HomePage() {
   const [progressMessage, setProgressMessage] = React.useState("");
   const [streamingReferences, setStreamingReferences] = React.useState<RankedReference[]>([]);
   const [notice, setNotice] = React.useState("");
-  const [aiProvider, setAiProvider] = React.useState<AiProvider>("gemini");
+  const [aiProvider, setAiProvider] = React.useState<AiProvider>("groq");
   const [personalApiKey, setPersonalApiKey] = React.useState("");
   const [aiSettingsOpen, setAiSettingsOpen] = React.useState(false);
 
@@ -422,13 +421,16 @@ export default function HomePage() {
         files.forEach((file) => formData.append("files", file, file.name));
         const filesById = new Map(clientFileIds.map((id, index) => [id, files[index]]));
         const personalKey = personalApiKey.trim();
+        const shouldOverrideProvider = personalKey.length > 0 || aiProvider === "ollama";
         const response = await fetch("/api/analyze", {
           method: "POST",
           body: formData,
-          headers: personalKey ? {
-            "x-mosaic-ai-provider": aiProvider,
-            "x-mosaic-ai-key": personalKey,
-          } : undefined,
+          headers: shouldOverrideProvider
+            ? {
+                "x-mosaic-ai-provider": aiProvider,
+                ...(personalKey ? { "x-mosaic-ai-key": personalKey } : {}),
+              }
+            : undefined,
         });
         const analysis = await readAnalysisStream(response, (event) => {
           setProgress(event.progress);
@@ -477,7 +479,7 @@ export default function HomePage() {
     setProgress(0);
     setProgressMessage("");
     setNotice("");
-    setAiProvider("gemini");
+    setAiProvider("groq");
     setPersonalApiKey("");
     setAiSettingsOpen(false);
   }

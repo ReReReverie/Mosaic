@@ -18,13 +18,14 @@ describe("resolveAiProvider", () => {
     });
   });
 
-  it("uses Gemini before legacy provider environment variables", () => {
+  it("prioritizes Groq before other configured hosted providers", () => {
     vi.stubEnv("GEMINI_API_KEY", "server-gemini-key");
     vi.stubEnv("OPENAI_API_KEY", "legacy-openai-key");
+    vi.stubEnv("GROQ_API_KEY", "server-groq-key");
 
     expect(resolveAiProvider()).toMatchObject({
-      provider: "gemini",
-      apiKey: "server-gemini-key",
+      provider: "groq",
+      apiKey: "server-groq-key",
       source: "default",
     });
   });

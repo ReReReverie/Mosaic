@@ -12,6 +12,7 @@ import { replicateErrorDetails, replicateOutputToText, runReplicate } from "./re
 import { promptProfileForProvider } from "./promptAnalysis";
 
 const VISION_TIMEOUT_MS = 45_000;
+const OLLAMA_TIMEOUT_MS = 120_000;
 // MiniCPM-V predictions commonly take close to two minutes on Replicate.
 // Keep the shorter timeout for hosted chat providers, but do not cancel a
 // valid image prediction before the model has a chance to return its text.
@@ -28,7 +29,10 @@ function isRateLimitError(error: unknown): boolean {
 }
 
 function ollamaBaseUrl(): string {
-  return process.env.OLLAMA_BASE_URL?.trim().replace(/\/+$/, "") || "http://localhost:11434";
+  const dockerDefault = process.env.MOSAIC_DOCKER === "true"
+    ? "http://host.docker.internal:11434"
+    : "http://localhost:11434";
+  return process.env.OLLAMA_BASE_URL?.trim().replace(/\/+$/, "") || dockerDefault;
 }
 
 function isEnabled(value: string | undefined): boolean {
@@ -45,10 +49,10 @@ export function visionFileLimit(): number {
   return Number.isFinite(configured) ? Math.max(0, Math.min(50, Math.floor(configured))) : 50;
 }
 
-async function requestJson(url: string, init: RequestInit): Promise<Record<string, unknown>> {
+async function requestJson(url: string, init: RequestInit, timeoutMs = VISION_TIMEOUT_MS): Promise<Record<string, unknown>> {
   const response = await fetch(url, {
     ...init,
-    signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
   if (!response.ok) {
@@ -249,7 +253,7 @@ async function generateVisionText(
         }],
         options: { num_predict: 300 },
       }),
-    });
+    }, OLLAMA_TIMEOUT_MS);
     return textFromPayload(config, payload);
   }
 

@@ -45,6 +45,7 @@ const GROQ_STRUCTURED_MODEL = "qwen/qwen3.6-27b";
 
 const MAX_API_KEY_LENGTH = 512;
 const PROVIDER_TIMEOUT_MS = 30_000;
+const OLLAMA_TIMEOUT_MS = 120_000;
 
 function readSecret(value: string | undefined): string | undefined {
   const secret = value?.trim();
@@ -110,10 +111,10 @@ export function resolveAiProvider(override?: {
   }
 
   const defaultCredentials: Array<[AiProvider, string | undefined]> = [
+    ["groq", readSecret(process.env.GROQ_API_KEY)],
     ["gemini", readSecret(process.env.GEMINI_API_KEY)],
     ["openai", readSecret(process.env.OPENAI_API_KEY)],
     ["anthropic", readSecret(process.env.ANTHROPIC_API_KEY)],
-    ["groq", readSecret(process.env.GROQ_API_KEY)],
     ["replicate", readSecret(process.env.REPLICATE_API_TOKEN)],
     // Ollama is always available locally — use it as final fallback when enabled
     ["ollama", readSecret(process.env.OLLAMA_ENABLED) ? "ollama" : undefined],
@@ -138,13 +139,14 @@ function providerName(provider: AiProvider): string {
 async function requestJson(
   provider: AiProvider,
   url: string,
-  init: RequestInit
+  init: RequestInit,
+  timeoutMs = PROVIDER_TIMEOUT_MS
 ): Promise<Record<string, unknown>> {
   let response: Response;
   try {
     response = await fetch(url, {
       ...init,
-      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     throw new Error(`${providerName(provider)} is unavailable right now.`);
@@ -281,7 +283,7 @@ async function generateWithOpenAiCompat(
           }
         : { max_tokens: 500 }),
     }),
-  });
+  }, provider === "ollama" ? OLLAMA_TIMEOUT_MS : PROVIDER_TIMEOUT_MS);
 
   const choices = payload.choices;
   if (!Array.isArray(choices)) throw new Error(`${providerName(provider)} returned no choices.`);
@@ -304,6 +306,9 @@ export async function generateStructuredText(
     throw new Error("Replicate is configured for image analysis only; text-only generation is not supported.");
   }
   // ollama
-  const ollamaBase = readSecret(process.env.OLLAMA_BASE_URL) ?? "http://localhost:11434";
+  const ollamaDefault = process.env.MOSAIC_DOCKER === "true"
+    ? "http://host.docker.internal:11434"
+    : "http://localhost:11434";
+  const ollamaBase = readSecret(process.env.OLLAMA_BASE_URL) ?? ollamaDefault;
   return generateWithOpenAiCompat("ollama", ollamaBase, config, systemPrompt, userPrompt);
 }
