@@ -63,16 +63,11 @@ body {
   gap: 10px;
 }
 
-.mosaic-brand-mark {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
+.mosaic-brand-logo {
+  display: block;
+  width: 220px;
+  height: auto;
   border-radius: 8px;
-  background: var(--mosaic-ink);
-  color: var(--mosaic-lime);
-  font-size: 18px;
-  font-weight: 900;
 }
 
 .mosaic-brand-lockup strong,
@@ -1051,16 +1046,12 @@ body {
 }
 
 .mosaic-empty-glyph {
-  display: grid;
+  display: block;
   width: 58px;
   height: 58px;
-  place-items: center;
   margin-bottom: 16px;
   border-radius: 18px;
-  background: var(--mosaic-ink);
-  color: var(--mosaic-lime);
-  font-size: 30px;
-  font-weight: 900;
+  object-fit: cover;
 }
 
 .mosaic-empty-board h3 {

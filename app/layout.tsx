@@ -12,6 +12,11 @@ export const metadata: Metadata = {
   description:
     "Turn a creative brief and your own reference folder into an explainable, accessible visual board.",
   applicationName: "Mosaic",
+  icons: {
+    icon: "/mosaic-icon-matched.png",
+    shortcut: "/mosaic-icon-matched.png",
+    apple: "/mosaic-icon-matched.png",
+  },
   keywords: ["creative direction", "moodboard", "visual references", "design workflow"],
   openGraph: {
     title: "Mosaic — Creative Reference Lab",
