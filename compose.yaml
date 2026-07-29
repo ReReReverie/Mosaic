@@ -8,9 +8,6 @@ services:
         required: false
     environment:
       NEXT_TELEMETRY_DISABLED: "1"
-      MOSAIC_DOCKER: "true"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${MOSAIC_HOST_PORT:-9000}:9000"
     volumes:

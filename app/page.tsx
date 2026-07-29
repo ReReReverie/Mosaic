@@ -239,7 +239,6 @@ const AI_PROVIDER_OPTIONS: Array<{ value: AiProvider; label: string }> = [
   { value: "groq", label: "Groq" },
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic Claude" },
-  { value: "ollama", label: "Ollama (local)" },
   { value: "replicate", label: "Replicate (MiniCPM-V)" },
 ];
 
@@ -421,7 +420,7 @@ export default function HomePage() {
         files.forEach((file) => formData.append("files", file, file.name));
         const filesById = new Map(clientFileIds.map((id, index) => [id, files[index]]));
         const personalKey = personalApiKey.trim();
-        const shouldOverrideProvider = personalKey.length > 0 || aiProvider === "ollama";
+        const shouldOverrideProvider = personalKey.length > 0;
         const response = await fetch("/api/analyze", {
           method: "POST",
           body: formData,

@@ -1,7 +1,7 @@
 import { extractModelText } from "./structuredJson";
 import { REPLICATE_DEFAULT_MODEL } from "./replicateProvider";
 
-export const AI_PROVIDERS = ["gemini", "openai", "anthropic", "groq", "ollama", "replicate"] as const;
+export const AI_PROVIDERS = ["gemini", "openai", "anthropic", "groq", "replicate"] as const;
 
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 export type AiProviderSource = "default" | "session";
@@ -29,7 +29,6 @@ export const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic Claude",
   groq: "Groq",
-  ollama: "Ollama (local)",
   replicate: "Replicate (MiniCPM-V)",
 };
 
@@ -38,14 +37,12 @@ const DEFAULT_MODELS: Record<AiProvider, string> = {
   openai: "gpt-4o",
   anthropic: "claude-3-5-haiku-latest",
   groq: "qwen/qwen3.6-27b",
-  ollama: "llama3.2-vision",
   replicate: REPLICATE_DEFAULT_MODEL,
 };
 const GROQ_STRUCTURED_MODEL = "qwen/qwen3.6-27b";
 
 const MAX_API_KEY_LENGTH = 512;
 const PROVIDER_TIMEOUT_MS = 30_000;
-const OLLAMA_TIMEOUT_MS = 120_000;
 
 function readSecret(value: string | undefined): string | undefined {
   const secret = value?.trim();
@@ -70,9 +67,7 @@ function modelFor(provider: AiProvider, source: AiProviderSource): string {
             ? process.env.ANTHROPIC_MODEL
             : provider === "groq"
               ? process.env.GROQ_MODEL
-              : provider === "ollama"
-                ? process.env.OLLAMA_MODEL
-                : process.env.REPLICATE_MODEL
+              : process.env.REPLICATE_MODEL
     );
     if (environmentModel) return environmentModel;
   }
@@ -83,9 +78,6 @@ function modelFor(provider: AiProvider, source: AiProviderSource): string {
  * Resolves the session override first, then the server's configured default.
  * The returned session key is request-scoped data and must never be persisted.
  *
- * Ollama runs locally and needs no real API key. When provider is "ollama" and
- * no key is supplied, the placeholder "ollama" is used so the schema stays
- * consistent; Ollama ignores the Authorization header entirely.
  */
 export function resolveAiProvider(override?: {
   provider?: string | null;
@@ -96,15 +88,12 @@ export function resolveAiProvider(override?: {
 
   if (overrideKey || overrideProvider) {
     const provider = normalizeProvider(overrideProvider?.toLowerCase());
-    // Ollama is keyless — accept a missing or placeholder key
-    const isOllama = provider === "ollama";
-    const effectiveKey = overrideKey ?? (isOllama ? "ollama" : undefined);
-    if (!effectiveKey || (!isOllama && (effectiveKey.length < 10 || effectiveKey.length > MAX_API_KEY_LENGTH))) {
+    if (!overrideKey || overrideKey.length < 10 || overrideKey.length > MAX_API_KEY_LENGTH) {
       throw new Error("The personal API key is invalid.");
     }
     return {
       provider,
-      apiKey: effectiveKey,
+      apiKey: overrideKey,
       model: modelFor(provider, "session"),
       source: "session",
     };
@@ -116,8 +105,6 @@ export function resolveAiProvider(override?: {
     ["openai", readSecret(process.env.OPENAI_API_KEY)],
     ["anthropic", readSecret(process.env.ANTHROPIC_API_KEY)],
     ["replicate", readSecret(process.env.REPLICATE_API_TOKEN)],
-    // Ollama is always available locally — use it as final fallback when enabled
-    ["ollama", readSecret(process.env.OLLAMA_ENABLED) ? "ollama" : undefined],
   ];
 
   const configured = defaultCredentials.find(([, key]) => key);
@@ -252,7 +239,7 @@ async function generateWithAnthropic(
 
 /**
  * Shared implementation for OpenAI-compatible chat/completions endpoints.
- * Used by both Groq and Ollama.
+ * Used by Groq's OpenAI-compatible endpoint.
  */
 async function generateWithOpenAiCompat(
   provider: AiProvider,
@@ -283,7 +270,7 @@ async function generateWithOpenAiCompat(
           }
         : { max_tokens: 500 }),
     }),
-  }, provider === "ollama" ? OLLAMA_TIMEOUT_MS : PROVIDER_TIMEOUT_MS);
+  }, PROVIDER_TIMEOUT_MS);
 
   const choices = payload.choices;
   if (!Array.isArray(choices)) throw new Error(`${providerName(provider)} returned no choices.`);
@@ -305,10 +292,5 @@ export async function generateStructuredText(
   if (config.provider === "replicate") {
     throw new Error("Replicate is configured for image analysis only; text-only generation is not supported.");
   }
-  // ollama
-  const ollamaDefault = process.env.MOSAIC_DOCKER === "true"
-    ? "http://host.docker.internal:11434"
-    : "http://localhost:11434";
-  const ollamaBase = readSecret(process.env.OLLAMA_BASE_URL) ?? ollamaDefault;
-  return generateWithOpenAiCompat("ollama", ollamaBase, config, systemPrompt, userPrompt);
+  throw new Error(`${config.provider} does not have a configured text adapter.`);
 }

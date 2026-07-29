@@ -12,7 +12,6 @@ import { replicateErrorDetails, replicateOutputToText, runReplicate } from "./re
 import { promptProfileForProvider } from "./promptAnalysis";
 
 const VISION_TIMEOUT_MS = 45_000;
-const OLLAMA_TIMEOUT_MS = 120_000;
 // MiniCPM-V predictions commonly take close to two minutes on Replicate.
 // Keep the shorter timeout for hosted chat providers, but do not cancel a
 // valid image prediction before the model has a chance to return its text.
@@ -26,13 +25,6 @@ const GROQ_VISION_MODEL = "qwen/qwen3.6-27b";
 function isRateLimitError(error: unknown): boolean {
   if (error instanceof AiProviderError) return error.status === 429;
   return replicateErrorDetails(error).status === 429;
-}
-
-function ollamaBaseUrl(): string {
-  const dockerDefault = process.env.MOSAIC_DOCKER === "true"
-    ? "http://host.docker.internal:11434"
-    : "http://localhost:11434";
-  return process.env.OLLAMA_BASE_URL?.trim().replace(/\/+$/, "") || dockerDefault;
 }
 
 function isEnabled(value: string | undefined): boolean {
@@ -76,13 +68,6 @@ function textFromPayload(config: AiProviderConfig, payload: Record<string, unkno
       ? (candidates[0] as { content?: { parts?: Array<{ text?: unknown }> } } | undefined)?.content?.parts
       : undefined;
     return parts?.map((part) => typeof part.text === "string" ? part.text : "").join("").trim() ?? "";
-  }
-
-  if (config.provider === "ollama") {
-    const message = payload.message;
-    if (!message || typeof message !== "object") return "";
-    const content = (message as { content?: unknown }).content;
-    return typeof content === "string" ? content.trim() : "";
   }
 
   const choices = payload.choices;
@@ -238,25 +223,6 @@ async function generateVisionText(
     return textFromPayload(config, payload);
   }
 
-  if (config.provider === "ollama") {
-    const payload = await requestJson(`${ollamaBaseUrl()}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: config.model,
-        stream: false,
-        format: "json",
-        messages: [{
-          role: "user",
-          content: userText,
-          images: [imageData],
-        }],
-        options: { num_predict: 300 },
-      }),
-    }, OLLAMA_TIMEOUT_MS);
-    return textFromPayload(config, payload);
-  }
-
   if (config.provider === "replicate") {
     try {
       const output = await runReplicate(
@@ -344,7 +310,7 @@ export async function analyzeImageWithVision(
   brief: string,
   promptAnalysis?: PromptAnalysis
 ): Promise<Partial<ReferenceFeatures> | null> {
-  if (!isVisionEnabled() || !SUPPORTED_MIME.has(mimeType) || !["gemini", "openai", "groq", "ollama", "replicate"].includes(config.provider)) return null;
+  if (!isVisionEnabled() || !SUPPORTED_MIME.has(mimeType) || !["gemini", "openai", "groq", "replicate"].includes(config.provider)) return null;
 
   const sharp = (await import("sharp")).default;
   const normalized = await sharp(buffer)

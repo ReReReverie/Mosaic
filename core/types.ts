@@ -359,7 +359,7 @@ export interface AnalysisResult {
 
 export interface AiAnalysisSummary {
   enabled: boolean;
-  provider?: "gemini" | "openai" | "anthropic" | "groq" | "ollama" | "replicate";
+  provider?: "gemini" | "openai" | "anthropic" | "groq" | "replicate";
   requested: number;
   visionCompleted: number;
   textFallback: number;

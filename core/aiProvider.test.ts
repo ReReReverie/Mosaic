@@ -36,7 +36,6 @@ describe("resolveAiProvider", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "");
     vi.stubEnv("GROQ_API_KEY", "");
     vi.stubEnv("REPLICATE_API_TOKEN", "");
-    vi.stubEnv("OLLAMA_ENABLED", "");
 
     expect(resolveAiProvider()).toBeUndefined();
   });
@@ -84,7 +83,6 @@ describe("resolveAiProvider", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "");
     vi.stubEnv("GROQ_API_KEY", "");
     vi.stubEnv("REPLICATE_API_TOKEN", "r8_test_token_1234567890");
-    vi.stubEnv("OLLAMA_ENABLED", "");
 
     expect(resolveAiProvider()).toMatchObject({
       provider: "replicate",
@@ -127,43 +125,4 @@ describe("resolveAiProvider", () => {
     expect((request.headers as Record<string, string>)["Authorization"]).toBe("Bearer personal-groq-key-abc");
   });
 
-  it("accepts Ollama without an API key", () => {
-    expect(resolveAiProvider({ provider: "ollama" })).toMatchObject({
-      provider: "ollama",
-      apiKey: "ollama",
-      source: "session",
-    });
-  });
-
-  it("uses Ollama as server default when OLLAMA_ENABLED is set", () => {
-    vi.stubEnv("GEMINI_API_KEY", "");
-    vi.stubEnv("OPENAI_API_KEY", "");
-    vi.stubEnv("ANTHROPIC_API_KEY", "");
-    vi.stubEnv("GROQ_API_KEY", "");
-    vi.stubEnv("REPLICATE_API_TOKEN", "");
-    vi.stubEnv("OLLAMA_ENABLED", "true");
-
-    expect(resolveAiProvider()).toMatchObject({
-      provider: "ollama",
-      source: "default",
-    });
-  });
-
-  it("sends Ollama requests to localhost by default", async () => {
-    vi.stubEnv("OLLAMA_BASE_URL", "");
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      choices: [{ message: { content: '{"subject":[]}' } }],
-    }), { status: 200, headers: { "Content-Type": "application/json" } }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await generateStructuredText(
-      { provider: "ollama", apiKey: "ollama", model: "llama3.2", source: "session" },
-      "System prompt",
-      "User prompt"
-    );
-
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [url] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toContain("localhost:11434");
-  });
 });
