@@ -6,8 +6,6 @@
 import React from "react";
 import type { AiAnalysisSummary, AnalysisResult, ProgressEvent, RankedReference } from "@/core/types";
 import type { AiProvider } from "@/core/aiProvider";
-import { PromptAnalysisPanel } from "@/components/PromptAnalysisPanel";
-import { ReferenceSynthesisPanel } from "@/components/ReferenceSynthesisPanel";
 import { useBoardStore } from "@/lib/store";
 
 type Source = "local" | "online";
@@ -319,7 +317,7 @@ function AiProviderControls({
 }
 
 export default function HomePage() {
-  const { brief: storedBrief, result, constraints, scoringWeights, pinnedIds, removedIds, tooSimilarIds, setBrief, setConstraints, setResult, clearResult, setUploadedFiles, startNewSession, pinReference, unpinReference, removeReference, markTooSimilar } = useBoardStore();
+  const { brief: storedBrief, result, constraints, scoringWeights, pinnedIds, removedIds, tooSimilarIds, setBrief, setResult, clearResult, setUploadedFiles, startNewSession, pinReference, unpinReference, removeReference, markTooSimilar } = useBoardStore();
   const [briefInput, setBriefInput] = React.useState(storedBrief || DEFAULT_BRIEF);
   const [files, setFiles] = React.useState<File[]>([]);
   const [onlineReferences, setOnlineReferences] = React.useState<MosaicReference[]>([]);
@@ -333,7 +331,6 @@ export default function HomePage() {
   const [progress, setProgress] = React.useState(0);
   const [progressMessage, setProgressMessage] = React.useState("");
   const [streamingReferences, setStreamingReferences] = React.useState<RankedReference[]>([]);
-  const [streamingPromptAnalysis, setStreamingPromptAnalysis] = React.useState<AnalysisResult["promptAnalysis"] | null>(null);
   const [notice, setNotice] = React.useState("");
   const [aiProvider, setAiProvider] = React.useState<AiProvider>("gemini");
   const [personalApiKey, setPersonalApiKey] = React.useState("");
@@ -350,7 +347,6 @@ export default function HomePage() {
     isTooSimilar: tooSimilarIds.includes(reference.file.id),
   })), [streamingReferences, pinnedIds, removedIds, tooSimilarIds]);
   const displayedLocalReferences = result ? localReferences : streamingLocalReferences;
-  const visiblePromptAnalysis = result?.promptAnalysis ?? streamingPromptAnalysis;
   const onlineWithState = React.useMemo(() => onlineReferences.map((reference) => ({ ...reference, isPinned: onlinePinned.includes(reference.id), isRemoved: onlineRemoved.includes(reference.id), isTooSimilar: onlineSimilar.includes(reference.id) })), [onlineReferences, onlinePinned, onlineRemoved, onlineSimilar]);
   const allReferences = [...displayedLocalReferences, ...onlineWithState];
   const visibleReferences = allReferences.filter((reference) => !reference.isRemoved);
@@ -359,8 +355,6 @@ export default function HomePage() {
   const safePage = Math.min(page, totalPages - 1);
   const pagedReferences = filteredReferences.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
   const selectedReferences = visibleReferences.filter((reference) => reference.isPinned || reference.score >= 70).slice(0, 8);
-  const selectedFormat = String(constraints.find((constraint) => constraint.type === "format")?.value ?? "any");
-  const selectedOutput = String(constraints.find((constraint) => constraint.type === "output")?.value ?? "both");
   const canAnalyze = briefInput.trim().length >= 5 && (files.length > 0 || autoSearch) && status !== "scanning";
   const analysisHint = status === "scanning"
     ? ""
@@ -385,12 +379,6 @@ export default function HomePage() {
     setFiles(selected);
   }
 
-  function updateConstraint(type: "format" | "output", value: string) {
-    const next = constraints.filter((constraint) => constraint.type !== type);
-    if (value !== "any" && value !== "both") next.push({ type, value, description: `${type === "format" ? "Format" : "Output"}: ${value}` });
-    setConstraints(next);
-  }
-
   async function fetchOnlineReferences() {
     const response = await fetch("/api/discover", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ brief: briefInput, direction }) });
     if (!response.ok) throw new Error("Automatic search is unavailable right now.");
@@ -409,7 +397,6 @@ export default function HomePage() {
     setOnlineSimilar([]);
     setUploadedFiles([]);
     setStreamingReferences([]);
-    setStreamingPromptAnalysis(null);
     setStatus("scanning");
     setProgress(2);
     setProgressMessage("Preparing the reference library…");
@@ -447,12 +434,10 @@ export default function HomePage() {
           setProgress(event.progress);
           setProgressMessage(event.message);
           if (event.partialReferences) setStreamingReferences(event.partialReferences);
-          if (event.promptAnalysis) setStreamingPromptAnalysis(event.promptAnalysis);
         });
         setUploadedFiles(analysis.references.flatMap((reference) => { const file = filesById.get(reference.file.id); return file ? [{ id: reference.file.id, file }] : []; }));
         setResult(analysis);
         setStreamingReferences([]);
-        setStreamingPromptAnalysis(null);
         if (analysis.aiAnalysis?.enabled && (analysis.aiAnalysis.failed > 0 || analysis.aiAnalysis.skipped > 0)) {
           const fallbackCount = analysis.aiAnalysis.failed + analysis.aiAnalysis.skipped;
           const providerLabel = analysis.aiAnalysis.provider?.toUpperCase() ?? "AI";
@@ -486,7 +471,6 @@ export default function HomePage() {
     setOnlineRemoved([]);
     setOnlineSimilar([]);
     setStreamingReferences([]);
-    setStreamingPromptAnalysis(null);
     setTab("all");
     setPage(0);
     setStatus("idle");
@@ -573,7 +557,6 @@ export default function HomePage() {
             </div>
             {autoSearch && <div className="mosaic-provider-row"><span className="mosaic-provider-badge">◎</span><div><strong>Open-license discovery</strong><small>Wikimedia Commons demo adapter · attribution retained</small></div><span className="mosaic-ready-label">READY</span></div>}
             <div className="mosaic-divider" />
-            <div className="mosaic-field-row"><div><label className="mosaic-field-label" htmlFor="format">OUTPUT FORMAT</label><select id="format" value={selectedFormat} onChange={(event) => updateConstraint("format", event.target.value)}><option value="any">Any format</option><option value="poster">Poster</option><option value="editorial">Editorial</option><option value="social">Social</option><option value="branding">Branding</option></select></div><div><label className="mosaic-field-label" htmlFor="output">OUTPUT TYPE</label><select id="output" value={selectedOutput} onChange={(event) => updateConstraint("output", event.target.value)}><option value="both">Print + screen</option><option value="print">Print</option><option value="screen">Screen</option></select></div></div>
             <button className="mosaic-analyze-button" type="submit" disabled={!canAnalyze}><span>{status === "scanning" ? "ANALYZING LIBRARY" : status === "ready" ? "RERUN ANALYSIS" : "ANALYZE REFERENCES"}</span><b>↗</b></button>
             {analysisHint && <p className="mosaic-action-hint" role="status">{analysisHint}</p>}
             {status === "scanning" && <div className="mosaic-progress-message" role="status"><span style={{ width: `${progress}%` }} />{progressMessage || "Reading visual signals…"}</div>}
@@ -586,7 +569,6 @@ export default function HomePage() {
           <div className="mosaic-board-header"><div><p className="mosaic-eyebrow">REFERENCE BOARD {status === "ready" ? "· UPDATED JUST NOW" : status === "scanning" ? "· ANALYZING" : "· AWAITING INPUT"}</p><h2>{status === "ready" ? `${visibleReferences.length} signals for your direction` : status === "scanning" && visibleReferences.length > 0 ? `${visibleReferences.length} signals ready — continuing analysis` : "A considered starting point"}</h2></div><div className="mosaic-board-actions"><button type="button" className="mosaic-ghost-button" onClick={handleReset}>RESET</button></div></div>
           <div className="mosaic-board-toolbar"><div className="mosaic-tabs"><button type="button" className={tab === "all" ? "active" : ""} onClick={() => { setTab("all"); setPage(0); }} aria-pressed={tab === "all"}>ALL <small>{visibleReferences.length}</small></button><button type="button" className={tab === "local" ? "active" : ""} onClick={() => { setTab("local"); setPage(0); }} aria-pressed={tab === "local"}>LOCAL <small>{visibleReferences.filter((reference) => reference.source === "local").length}</small></button><button type="button" className={tab === "online" ? "active" : ""} onClick={() => { setTab("online"); setPage(0); }} aria-pressed={tab === "online"}>ONLINE <small>{visibleReferences.filter((reference) => reference.source === "online").length}</small></button></div><span className="mosaic-board-sort">RANKED BY FIT <span>↓</span></span></div>
            {result?.aiAnalysis?.enabled && <div className="mosaic-ai-coverage ready"><strong>{result.aiAnalysis.provider?.toUpperCase()} AI COVERAGE</strong><span>{result.aiAnalysis.visionCompleted + result.aiAnalysis.textFallback + result.aiAnalysis.failed + result.aiAnalysis.skipped}/{result.aiAnalysis.requested} references processed · {result.aiAnalysis.visionCompleted} vision · {result.aiAnalysis.provider === "replicate" ? `${result.aiAnalysis.failed + result.aiAnalysis.skipped} deterministic fallback` : `${result.aiAnalysis.textFallback} text fallback · ${result.aiAnalysis.failed + result.aiAnalysis.skipped} deterministic fallback`}</span></div>}
-           {visiblePromptAnalysis && <div className="mosaic-board-analysis-panels"><PromptAnalysisPanel analysis={visiblePromptAnalysis} />{result?.referenceSynthesis && <ReferenceSynthesisPanel synthesis={result.referenceSynthesis} />}</div>}
           {status === "idle" && <div className="mosaic-empty-board"><div className="mosaic-empty-glyph">M</div><h3>Your board starts here.</h3><p>Write a brief, attach a folder, or toggle Automatic Search. Mosaic will return references with the reasoning attached.</p><div className="mosaic-empty-lines"><span /><span /><span /></div></div>}
           {status === "scanning" && <div className="mosaic-loading-board"><span className="mosaic-loader" /><p>{visibleReferences.length > 0 ? "More references are still being analyzed…" : "Reading visual signals and checking source metadata…"}</p><div className="mosaic-progress-track"><span style={{ width: `${progress}%` }} /></div></div>}
           {status === "ready" && filteredReferences.length === 0 && <div className="mosaic-empty-board"><div className="mosaic-empty-glyph">↺</div><h3>No references in this view.</h3><p>Try another source tab or reset the board to start over.</p></div>}

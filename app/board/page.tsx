@@ -15,8 +15,6 @@ import { DiversityPanel } from "@/components/DiversityPanel";
 import { PalettePanel } from "@/components/PalettePanel";
 import { AccessibilityPanel } from "@/components/AccessibilityPanel";
 import { SkippedFilesPanel } from "@/components/SkippedFilesPanel";
-import { PromptAnalysisPanel } from "@/components/PromptAnalysisPanel";
-import { ReferenceSynthesisPanel } from "@/components/ReferenceSynthesisPanel";
 
 const TOP_N = 12;
 
@@ -51,7 +49,7 @@ export default function BoardPage() {
 
   const {
     references, creativeDirection, styleDNA,
-    promptAnalysis, referenceSynthesis, diversitySuggestions, palette, accessibilityFindings, skippedFiles,
+    diversitySuggestions, palette, accessibilityFindings, skippedFiles,
   } = result;
 
   const visible = references.filter((r) => !r.isRemoved).slice(0, TOP_N);
@@ -158,9 +156,7 @@ export default function BoardPage() {
           }}
         >
           <div className="flex flex-col gap-1 p-3">
-            <PromptAnalysisPanel analysis={promptAnalysis} />
             <CreativeDirectionPanel direction={creativeDirection} />
-            <ReferenceSynthesisPanel synthesis={referenceSynthesis} />
             <StyleDNAPanel dna={styleDNA} />
             <DiversityPanel
               suggestions={diversitySuggestions}

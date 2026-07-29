@@ -236,8 +236,6 @@ on Windows.
 - **Diversity Suggestions** — detects repetitive boards and recommends alternatives
 - **Palette Recommendations** — three palette options derived from your references
 - **Accessibility Checker** — WCAG 2.1 AA contrast and color-blind risk warnings
-- **Collapsible Analysis Panels** — expand the Prompt Profile and Set-level Read
-  sections when you want deeper guidance without crowding the board
 
 ## Work in progress
 
@@ -246,6 +244,8 @@ on Windows.
   status.
 - **ZIP export** - temporarily unavailable while the local review workflow is
   being refined.
+- **Prompt Profile and Set-level Read** - temporarily hidden while the board
+  presentation is being simplified.
 
 ## AI Enhancement
 
