@@ -218,28 +218,16 @@ on Windows.
 
 1. Enter a creative brief (e.g. *"Find references for a warm, editorial poster about local food for young adults."*)
 2. Upload a folder of reference images, PDFs, and documents
-3. Adjust creative constraints (format, output type, scoring weights) as needed
-4. Review the ranked posterboard
-5. Pin, remove, or mark references as too similar
+3. Review the ranked posterboard
+4. Pin, remove, or mark references as too similar
 
 ## Features
 
-- **Creative Direction Breakdown** — structured intent extracted from your brief
 - **Explainable Ranking** — every reference card shows evidence-based reasons
 - **Style DNA** — shared visual characteristics of your selected references
 - **Diversity Suggestions** — detects repetitive boards and recommends alternatives
 - **Palette Recommendations** — three palette options derived from your references
 - **Accessibility Checker** — WCAG 2.1 AA contrast and color-blind risk warnings
-
-## Work in progress
-
-- **Per-reference View analysis** - temporarily hidden while the interaction
-  and rendering behavior are refined. See [`read.md`](read.md) for the current
-  status.
-- **ZIP export** - temporarily unavailable while the local review workflow is
-  being refined.
-- **Prompt Profile and Set-level Read** - temporarily hidden while the board
-  presentation is being simplified.
 
 ## AI Enhancement
 
@@ -318,7 +306,7 @@ provider.
   provider or model; paid APIs can improve availability but do not guarantee
   fixed response times.
 - Without an AI provider/API key, semantic prompt interpretation, image
-  enrichment, and richer set-level synthesis are limited. The deterministic
+  enrichment, and richer reference explanations are limited. The deterministic
   local analysis remains available.
 - Uploaded source files are ephemeral. Cross-device persistence is not currently
   available because the project intentionally has no hosted database.
