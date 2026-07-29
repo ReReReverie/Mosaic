@@ -115,6 +115,12 @@ MOSAIC_VISION_MAX_FILES=50
 MOSAIC_AI_MAX_CONCURRENCY=4
 ```
 
+#### Recommended API: Groq
+
+For the fullest AI-assisted experience, we recommend using the [Groq API](https://console.groq.com/).
+Create a personal API key, add it to `.env.local` as `GROQ_API_KEY`, and keep
+`GROQ_MODEL=qwen/qwen3.6-27b` for Mosaic's configured default.
+
 Groq is the preferred default when `GROQ_API_KEY` is configured. The current
 environment configuration only includes the active Groq, OpenAI, Anthropic,
 and Replicate provider variables.
