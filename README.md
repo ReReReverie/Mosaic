@@ -2,6 +2,8 @@
 
 Mosaic is an analytical AI partner for graphic and visual designers. Enter a creative brief, select a reference folder, and get a ranked moodboard with explainable reasons, Style DNA, diversity suggestions, palette recommendations, and accessibility warnings.
 
+Repository: [ReReReverie/Mosaic.git](https://github.com/ReReReverie/Mosaic.git)
+
 ## Project leadership
 
 - **Lead developer / team leader:** Lanz Martene
