@@ -359,7 +359,6 @@ export default function HomePage() {
   const safePage = Math.min(page, totalPages - 1);
   const pagedReferences = filteredReferences.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
   const selectedReferences = visibleReferences.filter((reference) => reference.isPinned || reference.score >= 70).slice(0, 8);
-  const errorCount = result?.accessibilityFindings.filter((finding) => finding.severity === "error").length ?? 0;
   const selectedFormat = String(constraints.find((constraint) => constraint.type === "format")?.value ?? "any");
   const selectedOutput = String(constraints.find((constraint) => constraint.type === "output")?.value ?? "both");
   const canAnalyze = briefInput.trim().length >= 5 && (files.length > 0 || autoSearch) && status !== "scanning";
@@ -546,7 +545,7 @@ export default function HomePage() {
   return (
     <main className="mosaic-shell">
       <header className="mosaic-topbar"><div className="mosaic-brand-lockup"><span className="mosaic-brand-mark">M</span><div><strong>MOSAIC</strong><span>creative reference lab</span></div></div><div className="mosaic-topbar-meta"><span className="mosaic-status-dot" /> local-first analysis <span className="mosaic-slash">/</span> v1.0</div></header>
-      <section className="mosaic-hero"><div><p className="mosaic-eyebrow">AI-ASSISTED VISUAL RESEARCH</p><h1>Find the visual language<br /><em>before</em> you make the thing.</h1><p className="mosaic-hero-subtitle">Mosaic turns a creative brief and a reference library into a ranked, explainable board—then shows you what the references have in common.</p></div><div className="mosaic-hero-note"><span>01</span><p>Analysis, not generation.<br /><strong>Your eye stays in charge.</strong></p></div></section>
+      <section className="mosaic-hero"><div><p className="mosaic-eyebrow">AI-ASSISTED VISUAL RESEARCH</p><h1>Find the visual language<br /><em>before</em> you make the thing.</h1><p className="mosaic-hero-subtitle">Mosaic turns a creative brief and a reference library into a ranked, explainable board—then shows you what the references have in common.</p></div></section>
 
       <section className="mosaic-workspace-grid">
         <aside className="mosaic-brief-column">
@@ -641,10 +640,8 @@ export default function HomePage() {
         </section>
 
         <aside className="mosaic-insights-column">
-          <div className="mosaic-insight-card"><div className="mosaic-insight-title"><span className="mosaic-index">02</span><div><p className="mosaic-eyebrow">BRIEF SIGNALS</p><h3>Creative direction</h3></div></div><div className="mosaic-direction-grid">{[["SUBJECT", result?.creativeDirection.subject[0] || direction.subject], ["MOOD", result?.creativeDirection.mood.length ? `${result.creativeDirection.mood.slice(0, 6).join(" · ")}${result.creativeDirection.mood.length > 6 ? " · …" : ""}` : direction.mood], ["STYLE", result?.creativeDirection.style[0] || direction.style], ["AUDIENCE", result?.creativeDirection.audience[0] || direction.audience]].map(([label, value]) => <div className="mosaic-insight-pill" key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><p className="mosaic-insight-copy">{briefInput.length > 20 ? "The brief is specific enough to rank. Mosaic keeps the reasoning attached to every selection." : "Add more detail to make the ranking more specific."}</p></div>
           <div className="mosaic-insight-card"><div className="mosaic-insight-title"><span className="mosaic-index">03</span><div><p className="mosaic-eyebrow">PATTERN READ</p><h3>Style DNA</h3></div></div><p className="mosaic-style-summary">{result?.styleDNA.summary || (selectedReferences.length ? "The board is beginning to reveal shared visual characteristics." : "Select references to reveal the visual patterns the board is converging on.")}</p>{styleBars.map((bar) => <InsightBar key={bar.label} {...bar} />)}</div>
           <div className="mosaic-insight-card mosaic-palette-card"><div className="mosaic-insight-title"><span className="mosaic-index">04</span><div><p className="mosaic-eyebrow">COLOR STUDY</p><h3>Palette directions</h3></div></div><div className="mosaic-palette-list">{palettes.map((palette) => <div className="mosaic-palette-row" key={palette.name}><div className="mosaic-palette-label"><strong>{palette.name}</strong><span>{palette.name === "Contrast-aware" ? "CHECK CONTRAST" : "READY TO EXPLORE"}</span></div><div className="mosaic-swatches">{palette.colors.map((color, index) => <span key={`${palette.name}-${color}-${index}`} title={color} style={{ background: color }} />)}</div></div>)}</div></div>
-          <div className="mosaic-insight-card"><div className="mosaic-insight-title"><span className="mosaic-index">05</span><div><p className="mosaic-eyebrow">BOARD CHECK</p><h3>Useful tension</h3></div></div><p className="mosaic-style-summary">{selectedReferences.length < 3 ? "Add at least three references to compare visual clusters." : "The board has useful variation across angle and color. Keep one contrasting reference as a deliberate edge."}</p><div className="mosaic-check-row"><span>◌</span><div><strong>Accessibility scan</strong><small>{result ? (errorCount ? `${errorCount} contrast or compatibility issue${errorCount === 1 ? "" : "s"} need review.` : "No high-severity accessibility findings.") : "Runs when references are selected."}</small></div></div></div>
         </aside>
       </section>
       <footer className="mosaic-footer-note"><span>MOSAIC / CREATIVE REFERENCE LAB</span><span>ANALYTICAL AI · HUMAN JUDGMENT · SOURCE-AWARE</span></footer>
