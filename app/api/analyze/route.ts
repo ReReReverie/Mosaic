@@ -211,18 +211,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { registerThumbnails } = await import("@/lib/thumbnailCache");
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
-        const registeredThumbnailIds = new Set<string>();
-        const registerNewThumbnails = async (references: NonNullable<ProgressEvent["partialReferences"]>) => {
-          const newReferences = references.filter((reference) => !registeredThumbnailIds.has(reference.file.id));
-          if (newReferences.length === 0) return;
-          await registerThumbnails(newReferences, fileBuffers);
-          newReferences.forEach((reference) => registeredThumbnailIds.add(reference.file.id));
-        };
-
         try {
           const generator = runAnalysis({
             files: referenceFiles,
@@ -247,12 +238,6 @@ export async function POST(req: NextRequest) {
           });
 
           for await (const event of generator) {
-            if (event.partialReferences) {
-              await registerNewThumbnails(event.partialReferences);
-            }
-            if (event.type === "done" && event.result) {
-              await registerNewThumbnails(event.result.references);
-            }
             controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
           }
         } catch (err) {

@@ -14,6 +14,8 @@ export interface ReferenceFile {
   mimeType: string;
   sizeBytes: number;
   lastModified: number;
+  /** Client-generated, JSON-serialisable preview for local image references. */
+  previewUrl?: string;
 }
 
 export interface ColorSample {

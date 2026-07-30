@@ -7,6 +7,7 @@ import React from "react";
 import type { AiAnalysisSummary, AnalysisResult, ProgressEvent, RankedReference } from "@/core/types";
 import type { AiProvider } from "@/core/aiProvider";
 import { useBoardStore } from "@/lib/store";
+import { createBrowserThumbnail } from "@/lib/browserThumbnail";
 
 type Source = "local" | "online";
 type RunStatus = "idle" | "scanning" | "ready";
@@ -52,6 +53,8 @@ interface MosaicReference {
 const DEFAULT_BRIEF = "Find references for a warm, editorial poster about local food for young adults.";
 const MAX_REFERENCE_FILES = 50;
 const ACCEPTED_FILE_TYPES = ".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.svg,.pdf,.txt,.md,.csv,.json,.doc,.docx";
+const PREVIEW_CONCURRENCY = 4;
+const MAX_PREVIEW_DATA_URL_CHARS = 2_000_000;
 
 function inferDirection(brief: string) {
   const text = brief.toLowerCase();
@@ -123,7 +126,7 @@ function toMosaicReference(reference: RankedReference): MosaicReference {
     id: file.id,
     source: "local",
     title: file.filename,
-    previewUrl: file.mimeType.startsWith("image/") ? `/api/thumbnail/${encodeURIComponent(file.id)}` : "",
+    previewUrl: file.mimeType.startsWith("image/") ? (file.previewUrl ?? "") : "",
     provider: "Attached library",
     score: Math.round(reference.score * 100),
     overallMatchScore: reference.referenceEvaluation?.overallMatchScore,
@@ -151,6 +154,40 @@ function toMosaicReference(reference: RankedReference): MosaicReference {
       colors: features.colors.map((color) => color.hex),
     },
   };
+}
+
+function attachPreviewUrls<T extends RankedReference>(
+  references: T[],
+  previewUrls: ReadonlyMap<string, string>
+): T[] {
+  return references.map((reference) => {
+    const previewUrl = previewUrls.get(reference.file.id);
+    return previewUrl
+      ? { ...reference, file: { ...reference.file, previewUrl } }
+      : reference;
+  });
+}
+
+async function createPreviewMap(files: File[], ids: string[]): Promise<Map<string, string>> {
+  const previews = new Map<string, string>();
+  let nextIndex = 0;
+  let totalChars = 0;
+
+  async function worker(): Promise<void> {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= files.length) return;
+
+      const previewUrl = await createBrowserThumbnail(files[index]);
+      if (!previewUrl || totalChars + previewUrl.length > MAX_PREVIEW_DATA_URL_CHARS) continue;
+      previews.set(ids[index], previewUrl);
+      totalChars += previewUrl.length;
+    }
+  }
+
+  const workerCount = Math.min(PREVIEW_CONCURRENCY, files.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return previews;
 }
 
 function parseOnlineReferences(value: unknown): MosaicReference[] {
@@ -410,6 +447,8 @@ export default function HomePage() {
       }
       if (files.length > 0) {
         const clientFileIds = await Promise.all(files.map(deriveClientFileId));
+        setProgressMessage("Preparing local previews…");
+        const previewUrls = await createPreviewMap(files, clientFileIds);
         const formData = new FormData();
         formData.append("brief", briefInput.trim());
         formData.append("weights", JSON.stringify(scoringWeights));
@@ -434,10 +473,14 @@ export default function HomePage() {
         const analysis = await readAnalysisStream(response, (event) => {
           setProgress(event.progress);
           setProgressMessage(event.message);
-          if (event.partialReferences) setStreamingReferences(event.partialReferences);
+          if (event.partialReferences) setStreamingReferences(attachPreviewUrls(event.partialReferences, previewUrls));
         });
-        setUploadedFiles(analysis.references.flatMap((reference) => { const file = filesById.get(reference.file.id); return file ? [{ id: reference.file.id, file }] : []; }));
-        setResult(analysis);
+        const analysisWithPreviews = {
+          ...analysis,
+          references: attachPreviewUrls(analysis.references, previewUrls),
+        };
+        setUploadedFiles(analysisWithPreviews.references.flatMap((reference) => { const file = filesById.get(reference.file.id); return file ? [{ id: reference.file.id, file }] : []; }));
+        setResult(analysisWithPreviews);
         setStreamingReferences([]);
         if (analysis.aiAnalysis?.enabled && (analysis.aiAnalysis.failed > 0 || analysis.aiAnalysis.skipped > 0)) {
           const fallbackCount = analysis.aiAnalysis.failed + analysis.aiAnalysis.skipped;

@@ -1,6 +1,8 @@
 "use client";
 
-import Image from "next/image";
+/* eslint-disable @next/next/no-img-element */
+
+import { useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ANALYZER_DIMENSION_LABELS, type RankedReference } from "@/core/types";
 
@@ -21,8 +23,10 @@ function matchBadge(score: number) {
 
 export function ReferenceCard({ reference, onPin, onUnpin, onRemove, onMarkSimilar }: Props) {
   const { file, features, score, reasons, isPinned, isTooSimilar } = reference;
+  const [failedPreviewUrl, setFailedPreviewUrl] = useState<string | null>(null);
   const { label, style: badgeStyle } = matchBadge(score);
   const isImage = file.mimeType.startsWith("image/");
+  const imageVisible = isImage && Boolean(file.previewUrl) && failedPreviewUrl !== file.previewUrl;
   const pct = Math.round(score * 100);
   const evaluation = reference.referenceEvaluation;
   const safeReasons = Array.isArray(reasons) ? reasons : [];
@@ -48,13 +52,12 @@ export function ReferenceCard({ reference, onPin, onUnpin, onRemove, onMarkSimil
         className="relative flex h-40 w-full items-center justify-center overflow-hidden"
         style={{ background: "var(--surface-4)" }}
       >
-        {isImage ? (
-          <Image
-            src={`/api/thumbnail/${file.id}`}
+        {imageVisible ? (
+          <img
+            src={file.previewUrl}
             alt={file.filename}
-            fill
-            className="object-cover transition-transform duration-500 group-hover:scale-105"
-            sizes="(max-width: 768px) 100vw, 210px"
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            onError={() => setFailedPreviewUrl(file.previewUrl ?? null)}
           />
         ) : (
           <div className="flex flex-col items-center gap-1.5" style={{ color: "var(--text-3)" }}>
