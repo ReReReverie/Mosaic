@@ -10,7 +10,7 @@ Hosted website: [Mosaic](https://mosaic-alpha-taupe.vercel.app/)
 
 - **Lead developer / team leader:** Lanz Martene
 - **Project manager:** RodelioC03
-- **Documentation, quality testing, and demo lead:** Miguel De Guzman
+- **Demo lead:** Miguel De Guzman
 
 ## Installation
 
