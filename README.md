@@ -10,6 +10,7 @@ Hosted website: [Mosaic](https://mosaic-alpha-taupe.vercel.app/)
 
 - **Lead developer / team leader:** Lanz Martene
 - **Project manager:** RodelioC03
+- **Documentation, quality testing, and demo lead:** Miguel De Guzman
 
 ## Installation
 
@@ -313,6 +314,13 @@ provider.
   deterministic fallback analysis. AI results are advisory and may vary by
   provider or model; paid APIs can improve availability but do not guarantee
   fixed response times.
+- A personal API key does not guarantee AI enrichment: it must match the
+  selected provider, and unsupported, invalid, rate-limited, or timed-out
+  requests fall back to deterministic analysis. Cards labeled `VISUAL` indicate
+  this fallback; `AI VISION`, `AI TEXT`, or `MIXED` indicate successful AI
+  enrichment. After correcting the provider or API key, you may need to rerun
+  the analysis for the AI enrichment to appear. Gemini and OpenRouter keys are
+  not currently available in the provider selector.
 - Without an AI provider/API key, semantic prompt interpretation, image
   enrichment, and richer reference explanations are limited. The deterministic
   local analysis remains available.
